@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TCGBinder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ========== HEADER ========== -->
+  <header class="header">
+    <h1 class="logo">TCGBinder</h1>
+    <div class="header-controls">
+
+      <button id="layout-toggle" class="btn btn-outline" title="Toggle binder layout">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <rect x="2" y="3" width="9" height="18" rx="1.5"/>
+          <rect x="13" y="3" width="9" height="18" rx="1.5"/>
+        </svg>
+        <span id="layout-label">Single Page</span>
+      </button>
+
+      <label class="color-wrap" title="Change binder background color">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.93 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.44-.66-.44-1.12A1.64 1.64 0 0 1 14.42 16h2c3.05 0 5.55-2.5 5.55-5.55C21.97 6.01 17.46 2 12 2z"/>
+          <circle cx="8.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/>
+          <circle cx="15.5" cy="7.5" r="1.5" fill="currentColor" stroke="none"/>
+          <circle cx="17.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+          <circle cx="6.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+        </svg>
+        Background
+        <input type="color" id="bg-color" value="#3a3a3a">
+      </label>
+
+      <div class="dl-group">
+        <button id="dl-png" class="btn btn-outline" title="Download binder layout as PNG">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          PNG
+        </button>
+        <button id="dl-jpg" class="btn btn-outline" title="Download binder layout as JPG">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          JPG
+        </button>
+      </div>
+
+      <button id="clear-all" class="btn btn-danger" title="Clear all cards from the binder">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+        Clear All
+      </button>
+
+    </div>
+  </header>
+
+  <!-- ========== BINDER AREA ========== -->
+  <main class="main" id="main">
+    <div class="binder-scroll">
+      <div class="binder" id="binder">
+        <div class="binder-page" id="left-page"></div>
+        <div class="binder-spine" id="binder-spine"></div>
+        <div class="binder-page" id="right-page"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ========== SEARCH PANEL (fixed overlay) ========== -->
+  <aside class="search-panel" id="search-panel" aria-hidden="true">
+    <div class="sp-header">
+      <div>
+        <h3>Choose a Card</h3>
+        <p class="sp-slot-label" id="sp-slot-label"></p>
+      </div>
+      <button class="icon-btn" id="close-search" aria-label="Close search panel">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div class="sp-search-row">
+      <input type="text" id="search-input" placeholder="Search Pokémon cards…" autocomplete="off" spellcheck="false">
+      <button id="search-btn" class="btn btn-primary">Search</button>
+    </div>
+    <div class="sp-filters" id="sp-filters">
+      <select id="filter-type" class="filter-select filter-era" title="Filter by card type">
+        <option value="">All Types</option>
+        <option value="pokemon">Pokémon</option>
+        <option value="supporter">Supporter (Trainer)</option>
+        <option value="item">Item (Trainer)</option>
+        <option value="stadium">Stadium (Trainer)</option>
+        <option value="energy">Energy</option>
+      </select>
+      <select id="filter-era" class="filter-select filter-era" title="Filter by Pokémon TCG era / generation">
+        <option value="">All Eras</option>
+        <option value="sv">SV — Scarlet &amp; Violet</option>
+        <option value="swsh">SWSH — Sword &amp; Shield</option>
+        <option value="sm">SM — Sun &amp; Moon</option>
+        <option value="xy">XY</option>
+        <option value="bw">BW — Black &amp; White</option>
+        <option value="hgss">HGSS — HeartGold &amp; SoulSilver</option>
+        <option value="dp">DP / Platinum</option>
+        <option value="ex">EX Era</option>
+        <option value="neo">Neo / Gym / Base</option>
+      </select>
+      <select id="filter-rarity" class="filter-select" title="Filter by rarity">
+        <option value="">All Rarities</option>
+        <option value="Common">Common</option>
+        <option value="Uncommon">Uncommon</option>
+        <option value="Rare">Rare</option>
+        <option value="Rare Holo">Rare Holo</option>
+        <option value="Rare Holo EX">Rare Holo EX</option>
+        <option value="Rare Holo GX">Rare Holo GX</option>
+        <option value="Rare Holo V">Rare Holo V</option>
+        <option value="Rare Holo VMAX">Rare Holo VMAX</option>
+        <option value="Rare VSTAR">Rare VSTAR</option>
+        <option value="Rare Ultra">Rare Ultra</option>
+        <option value="Rare Secret">Rare Secret</option>
+        <option value="Amazing Rare">Amazing Rare</option>
+        <option value="Illustration Rare">Illustration Rare</option>
+        <option value="Special Illustration Rare">Special Illus. Rare</option>
+        <option value="Hyper Rare">Hyper Rare</option>
+        <option value="Promo">Promo</option>
+      </select>
+      <select id="filter-language" class="filter-select" title="pokemontcg.io provides English-language cards">
+        <option value="">All Languages</option>
+        <option value="en">English (EN)</option>
+      </select>
+      <select id="filter-alpha" class="filter-select" title="Sort results alphabetically">
+        <option value="">A–Z Order</option>
+        <option value="asc">A → Z</option>
+        <option value="desc">Z → A</option>
+      </select>
+      <select id="filter-date" class="filter-select" title="Sort by set release date">
+        <option value="">By Date</option>
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+      </select>
+    </div>
+    <div class="sp-results" id="sp-results">
+      <p class="hint-text">Type a name and press Search.</p>
+    </div>
+    <div class="sp-pagination" id="sp-pagination" style="display:none">
+      <button id="page-prev" class="btn btn-outline" disabled>← Prev</button>
+      <span id="page-info"></span>
+      <button id="page-next" class="btn btn-outline">Next →</button>
+    </div>
+  </aside>
+
+  <!-- backdrop to close panel on click -->
+  <div class="backdrop" id="backdrop"></div>
+
+  <!-- ========== PREVIEW MODAL ========== -->
+  <div class="modal-overlay" id="preview-modal">
+    <div class="modal preview-modal-inner">
+      <button class="modal-close" id="close-preview" aria-label="Close preview">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <img id="preview-img" src="" alt="" draggable="false">
+      <div class="preview-info">
+        <h3 id="preview-name"></h3>
+        <p id="preview-set"></p>
+        <button id="confirm-card" class="btn btn-primary btn-full">Add to Binder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== CONFIRM CLEAR MODAL ========== -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal confirm-modal-inner">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#e05252" stroke-width="1.8" style="margin-bottom:4px">
+        <polyline points="3 6 5 6 21 6"/>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+      </svg>
+      <h3>Clear All Cards?</h3>
+      <p>Every card slot will be emptied. This cannot be undone.</p>
+      <div class="confirm-actions">
+        <button id="cancel-clear" class="btn btn-outline">Cancel</button>
+        <button id="confirm-clear" class="btn btn-danger">Clear All</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
