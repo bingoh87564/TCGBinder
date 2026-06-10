@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Settings — TCGBinder</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="subpage-body">
+
+  <!-- ========== HEADER ========== -->
+  <header class="subpage-header">
+    <a href="index.html" class="logo" title="Back to app">TCGBinder</a>
+    <a href="index.html" class="subpage-back">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+      Back to App
+    </a>
+    <div id="profile-area" class="profile-area" style="display:none">
+      <button id="profile-btn" class="profile-btn" aria-label="Profile menu" aria-expanded="false">
+        <span id="profile-avatar" class="profile-avatar"></span>
+      </button>
+      <div id="profile-dropdown" class="profile-dropdown" hidden>
+        <a href="binder.html" class="profile-menu-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+          </svg>
+          My Binder
+        </a>
+        <a href="profile.html" class="profile-menu-item" style="color:var(--accent)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          Account Settings
+        </a>
+        <div class="profile-menu-divider"></div>
+        <button id="sign-out-btn" class="profile-menu-item profile-menu-signout">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          Sign Out
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========== MAIN ========== -->
+  <main class="subpage-main" id="subpage-main">
+    <div class="page-loading" id="page-loading">
+      <div class="spinner"></div>
+    </div>
+
+    <div id="settings-content" style="display:none">
+
+      <!-- Profile picture + info -->
+      <div class="profile-section">
+        <div class="profile-section-title">Profile</div>
+        <div class="profile-info-row">
+          <div id="avatar-large" class="profile-avatar-large" title="Click to change photo">
+            <span id="avatar-letter"></span>
+            <span class="avatar-edit-hint">Change<br>Photo</span>
+          </div>
+          <div class="profile-info-text">
+            <div class="profile-username" id="display-username">—</div>
+            <div class="profile-email"    id="display-email">—</div>
+          </div>
+        </div>
+        <input type="file" id="photo-input" accept="image/*" style="display:none">
+      </div>
+
+      <!-- Change username -->
+      <div class="profile-section">
+        <div class="profile-section-title">Change Username</div>
+        <div class="auth-field">
+          <label for="new-username">New username <span class="auth-label-hint">(3–20 chars, letters/numbers/_/-)</span></label>
+          <input type="text" id="new-username" placeholder="new_username" maxlength="20">
+        </div>
+        <p class="auth-error"   id="username-error"></p>
+        <p class="auth-success" id="username-success"></p>
+        <button id="save-username-btn" class="btn btn-primary">Save Username</button>
+      </div>
+
+      <!-- Change password -->
+      <div class="profile-section">
+        <div class="profile-section-title">Change Password</div>
+        <div class="auth-field">
+          <label for="current-password">Current password</label>
+          <input type="password" id="current-password" placeholder="Your current password" autocomplete="current-password">
+        </div>
+        <div class="auth-field">
+          <label for="new-password">New password</label>
+          <input type="password" id="new-password" placeholder="New password (8+ chars)" autocomplete="new-password">
+          <ul class="pwd-reqs" id="pwd-reqs" style="margin-top:8px">
+            <li id="req-len"     class="req">8+ characters</li>
+            <li id="req-upper"   class="req">Uppercase (A–Z)</li>
+            <li id="req-lower"   class="req">Lowercase (a–z)</li>
+            <li id="req-num"     class="req">Number (0–9)</li>
+            <li id="req-special" class="req">Special character</li>
+          </ul>
+        </div>
+        <div class="auth-field">
+          <label for="confirm-new-password">Confirm new password</label>
+          <input type="password" id="confirm-new-password" placeholder="Repeat new password" autocomplete="new-password">
+        </div>
+        <p class="auth-error"   id="password-error"></p>
+        <p class="auth-success" id="password-success"></p>
+        <button id="save-password-btn" class="btn btn-primary">Change Password</button>
+      </div>
+
+      <!-- Delete account -->
+      <div class="profile-section danger-zone">
+        <div class="profile-section-title">Danger Zone</div>
+        <p style="font-size:0.84rem;color:var(--text-muted);margin-bottom:16px;line-height:1.6">
+          Deleting your account is permanent. All your binders, layouts, and account data will be removed and cannot be recovered.
+        </p>
+        <button id="delete-account-btn" class="btn btn-danger">Delete My Account</button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ========== CROP MODAL ========== -->
+  <div class="subpage-modal-overlay hidden" id="crop-modal">
+    <div class="modal crop-modal-inner">
+      <button class="modal-close" id="close-crop">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <h3>Crop Profile Picture</h3>
+      <canvas id="crop-canvas" width="280" height="280"></canvas>
+      <div class="crop-zoom-row">
+        <label for="crop-zoom">Zoom</label>
+        <input type="range" id="crop-zoom" min="1" max="4" step="0.05" value="1">
+      </div>
+      <p style="font-size:0.72rem;color:var(--text-muted);text-align:center">Drag to reposition</p>
+      <div class="crop-actions">
+        <button id="cancel-crop" class="btn btn-outline">Cancel</button>
+        <button id="confirm-crop" class="btn btn-primary">Save Photo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== DELETE ACCOUNT CONFIRM ========== -->
+  <div class="subpage-modal-overlay hidden" id="delete-account-modal">
+    <div class="modal" style="width:90vw;max-width:400px">
+      <h3 style="font-size:1rem;font-weight:700;color:var(--danger);margin-bottom:14px">Delete Account</h3>
+      <p style="font-size:0.84rem;color:var(--text-muted);margin-bottom:18px;line-height:1.6">
+        Enter your password to confirm. This action is permanent and cannot be undone.
+      </p>
+      <div class="auth-field">
+        <label for="delete-confirm-password">Password</label>
+        <input type="password" id="delete-confirm-password" placeholder="Your password" autocomplete="current-password">
+      </div>
+      <p class="auth-error" id="delete-account-error"></p>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button id="cancel-delete-account" class="btn btn-outline" style="flex:1">Cancel</button>
+        <button id="confirm-delete-account" class="btn btn-danger" style="flex:1">Delete Forever</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="profile.js"></script>
+</body>
+</html>

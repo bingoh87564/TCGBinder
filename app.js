@@ -5,6 +5,21 @@
 const API = 'https://api.pokemontcg.io/v2';
 const STORAGE_KEY = 'poketopia_v1';
 
+/* ================================================================
+   FIREBASE CONFIGURATION
+   1. Go to https://console.firebase.google.com
+   2. Create a project → Add a web app → copy the config below
+   3. In Authentication → Sign-in method, enable Email/Password and Google
+   ================================================================ */
+const FIREBASE_CONFIG = {
+  apiKey:            'AIzaSyCZ4Ul9RLxH9Uf6MEDRDnrlCXmaNomE1vw',
+  authDomain:        'tcgbinder-f3a18.firebaseapp.com',
+  projectId:         'tcgbinder-f3a18',
+  storageBucket:     'tcgbinder-f3a18.firebasestorage.app',
+  messagingSenderId: '107975817219',
+  appId:             '1:107975817219:web:1e1c7b3ab405d03bfb3636',
+};
+
 /* Rarity sort order: higher = rarer (user-specified, with substitutions) */
 const RARITY_RANK = {
   'Promo':                        130,
@@ -87,6 +102,12 @@ const search = {
 };
 
 let dragSourceSlot = null;   // slot id being dragged, or null
+let currentUser    = null;   // currently signed-in Firebase user
+
+/* Touch drag state (mobile only) */
+let touchDragSrc = null;
+let touchGhost   = null;
+let touchDstSlot = null;
 
 /* ----------------------------------------------------------------
    State
@@ -134,21 +155,714 @@ const confirmClear = $('confirm-clear');
 const cancelClear  = $('cancel-clear');
 
 /* ================================================================
-   INIT
+   EMAILJS CONFIGURATION
+   1. Sign up at https://emailjs.com  (free: 200 emails/month)
+   2. Add an Email Service (Gmail, Outlook, etc.)
+   3. Create a Template — use these variables in the body:
+        {{to_name}}          — the recipient's username
+        {{verification_code}} — the 6-digit code
+      Set "To Email" field to: {{to_email}}
+   4. Copy your Public Key from Account → API Keys
    ================================================================ */
-function init() {
-  loadState();
-  buildSlots(leftPage, 'left');
-  buildSlots(rightPage, 'right');
-  addSpineRings();
-  renderBinder();
-  applyBgColor();
-  attachEvents();
+const EMAILJS_CONFIG = {
+  publicKey:  'wjxGGsNMJwPCp3EuH',
+  serviceId:  'service_i61e20a',
+  templateId: 'template_85nqjka',
+};
+
+/* ================================================================
+   AUTH — module-level state
+   ================================================================ */
+let pendingReg     = null;   // { email, username, password } held during code verification
+let verif          = null;   // { code, expiresAt }
+let countdownTimer = null;
+let fbDb           = null;   // Firestore instance (initialised in bootstrap)
+
+/* ================================================================
+   AUTH — view & error helpers
+   ================================================================ */
+function showAuthView(name) {
+  ['signin', 'register', 'reset', 'verify'].forEach(v => {
+    $('view-' + v).style.display = v === name ? '' : 'none';
+  });
+}
+
+function friendlyAuthError(code) {
+  return ({
+    'auth/invalid-email':          'Invalid email address.',
+    'auth/user-not-found':         'No account found for this email.',
+    'auth/wrong-password':         'Incorrect password.',
+    'auth/invalid-credential':     'Incorrect email or password.',
+    'auth/email-already-in-use':   'An account already exists for this email.',
+    'auth/weak-password':          'Password must be at least 6 characters.',
+    'auth/too-many-requests':      'Too many attempts — try again later.',
+    'auth/popup-closed-by-user':   'Sign-in was cancelled.',
+    'auth/popup-blocked':          'Popup blocked — allow popups for this site.',
+    'auth/network-request-failed': 'Network error — check your connection.',
+  })[code] || 'Something went wrong. Please try again.';
+}
+
+/* ================================================================
+   AUTH — registration validation
+   ================================================================ */
+function validatePassword(pw) {
+  return {
+    len:     pw.length >= 8,
+    upper:   /[A-Z]/.test(pw),
+    lower:   /[a-z]/.test(pw),
+    num:     /[0-9]/.test(pw),
+    special: /[^A-Za-z0-9]/.test(pw),
+  };
+}
+function allPwdReqsMet(pw) {
+  const v = validatePassword(pw);
+  return v.len && v.upper && v.lower && v.num && v.special;
+}
+function updatePwdReqs(pw) {
+  const v = validatePassword(pw);
+  $('req-len').classList.toggle('met', v.len);
+  $('req-upper').classList.toggle('met', v.upper);
+  $('req-lower').classList.toggle('met', v.lower);
+  $('req-num').classList.toggle('met', v.num);
+  $('req-special').classList.toggle('met', v.special);
+}
+function validateAge(birthdayStr) {
+  if (!birthdayStr) return false;
+  const today = new Date();
+  const bday  = new Date(birthdayStr);
+  let age = today.getFullYear() - bday.getFullYear();
+  const m = today.getMonth() - bday.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < bday.getDate())) age--;
+  return age >= 13;
+}
+
+/* ================================================================
+   AUTH — username uniqueness (Firestore)
+   ================================================================ */
+async function isUsernameTaken(username) {
+  if (!fbDb) return false;
+  try {
+    const snap = await fbDb.collection('usernames').doc(username.toLowerCase()).get();
+    return snap.exists;
+  } catch { return false; }
+}
+async function reserveUsername(username, uid) {
+  if (!fbDb) return;
+  const batch = fbDb.batch();
+  batch.set(fbDb.collection('usernames').doc(username.toLowerCase()), { uid });
+  batch.set(fbDb.collection('users').doc(uid), {
+    username,
+    email:     pendingReg.email,
+    createdAt: new Date().toISOString(),
+  });
+  await batch.commit();
+}
+
+/* ================================================================
+   AUTH — email verification code lifecycle
+   ================================================================ */
+function generateCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function startCountdown() {
+  clearInterval(countdownTimer);
+  const el = $('verify-timer');
+  function tick() {
+    if (!verif) { clearInterval(countdownTimer); return; }
+    const ms = verif.expiresAt - Date.now();
+    if (ms <= 0) {
+      clearInterval(countdownTimer);
+      el.textContent = 'Code has expired — please request a new one.';
+      el.className   = 'verify-timer expired';
+      return;
+    }
+    const m = Math.floor(ms / 60000);
+    const s = Math.floor((ms % 60000) / 1000);
+    el.textContent = `Expires in ${m}:${s.toString().padStart(2, '0')}`;
+    el.className   = 'verify-timer' + (ms < 60000 ? ' expiring' : '');
+  }
+  tick();
+  countdownTimer = setInterval(tick, 1000);
+}
+
+function clearVerifState() {
+  clearInterval(countdownTimer);
+  countdownTimer = null;
+  verif          = null;
+  pendingReg     = null;
+}
+
+async function sendCode() {
+  const code = generateCode();
+  verif = { code, expiresAt: Date.now() + 5 * 60 * 1000 };
+
+  const ejsReady = EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.startsWith('YOUR_');
+  if (ejsReady) {
+    await emailjs.send(
+      EMAILJS_CONFIG.serviceId,
+      EMAILJS_CONFIG.templateId,
+      { to_email: pendingReg.email, to_name: pendingReg.username, verification_code: code },
+      EMAILJS_CONFIG.publicKey,
+    );
+  } else {
+    // Dev fallback — code visible in the browser console
+    console.info(`[TCGBinder dev] Verification code for ${pendingReg.email}: ${code}`);
+    $('verify-hint').textContent = 'EmailJS not configured — see browser console for the code.';
+  }
+}
+
+async function startVerification(regData) {
+  pendingReg = regData;
+  await sendCode();
+  if (EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.startsWith('YOUR_')) {
+    $('verify-hint').textContent = `Enter the 6-digit code sent to ${pendingReg.email}.`;
+  }
+  clearCodeInputs();
+  showAuthView('verify');
+  startCountdown();
+}
+
+function clearCodeInputs() {
+  document.querySelectorAll('.code-input').forEach(i => { i.value = ''; i.classList.remove('filled'); });
+  setTimeout(() => { const f = document.querySelector('.code-input'); if (f) f.focus(); }, 50);
+}
+function getEnteredCode() {
+  return Array.from(document.querySelectorAll('.code-input')).map(i => i.value).join('');
+}
+
+/* ================================================================
+   AUTH — state handler
+   ================================================================ */
+function setProfileAvatar(user, userData) {
+  const avatar = $('profile-avatar');
+  if (!avatar) return;
+  if (userData?.photoData) {
+    avatar.style.backgroundImage = `url(${userData.photoData})`;
+    avatar.textContent = '';
+    avatar.classList.add('has-photo');
+  } else {
+    avatar.style.backgroundImage = '';
+    const name = userData?.username || user.displayName || user.email || '?';
+    avatar.textContent = name[0].toUpperCase();
+    avatar.classList.remove('has-photo');
+  }
+}
+
+function handleAuthState(user) {
+  const overlay = $('auth-overlay');
+
+  if (user) {
+    currentUser = user;
+    overlay.style.opacity       = '0';
+    overlay.style.pointerEvents = 'none';
+    $('profile-area').style.display    = 'flex';
+    $('save-binder-btn').style.display = '';
+    clearVerifState();
+    loadState();
+    renderBinder();
+    applyBgColor();
+    // Load user profile data for avatar
+    if (fbDb) {
+      fbDb.collection('users').doc(user.uid).get().then(snap => {
+        setProfileAvatar(user, snap.exists ? snap.data() : null);
+      }).catch(() => setProfileAvatar(user, null));
+    } else {
+      setProfileAvatar(user, null);
+    }
+    // Check if a layout was queued for loading (from binder page)
+    const pending = sessionStorage.getItem('tcgbinder_load');
+    if (pending) {
+      sessionStorage.removeItem('tcgbinder_load');
+      try {
+        const { binderId, layoutId, layoutData, layoutName } = JSON.parse(pending);
+        const doLoad = () => {
+          state.layout  = layoutData.layout  || 'single';
+          state.bgColor = layoutData.bgColor || '#3a3a3a';
+          state.cards   = layoutData.cards   || {};
+          saveState(); renderBinder(); applyBgColor();
+        };
+        if (Object.keys(state.cards).length > 0) {
+          $('load-layout-desc').textContent =
+            `Loading "${layoutName}" will replace your current binder. Continue?`;
+          showModal($('load-layout-modal'));
+          $('confirm-load-layout').onclick = () => { hideModal($('load-layout-modal')); doLoad(); };
+          $('cancel-load-layout').onclick  = () => hideModal($('load-layout-modal'));
+        } else {
+          doLoad();
+        }
+      } catch {}
+    }
+  } else {
+    currentUser = null;
+    overlay.style.opacity       = '1';
+    overlay.style.pointerEvents = '';
+    $('profile-area').style.display    = 'none';
+    $('save-binder-btn').style.display = 'none';
+    state.cards   = {};
+    state.layout  = 'single';
+    state.bgColor = '#3a3a3a';
+    renderBinder();
+    applyBgColor();
+    clearVerifState();
+    showAuthView('signin');
+    [['si-btn','Sign In'], ['reg-btn','Send Verification Code'], ['rst-btn','Send Reset Email']]
+      .forEach(([id, label]) => { const b = $(id); if (b) { b.disabled = false; b.textContent = label; } });
+  }
+}
+
+/* ================================================================
+   AUTH — event wiring
+   ================================================================ */
+function attachAuthEvents(fbAuth) {
+
+  // ---- Sign in with email ----
+  $('si-btn').addEventListener('click', () => {
+    $('si-error').textContent = '';
+    $('si-btn').disabled = true;
+    $('si-btn').textContent = '…';
+    fbAuth.signInWithEmailAndPassword($('si-email').value.trim(), $('si-password').value)
+      .catch(err => {
+        $('si-error').textContent = friendlyAuthError(err.code);
+        $('si-btn').disabled = false;
+        $('si-btn').textContent = 'Sign In';
+      });
+  });
+  $('si-email').addEventListener('keydown',    e => { if (e.key === 'Enter') $('si-password').focus(); });
+  $('si-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('si-btn').click(); });
+
+  // ---- Sign in with Google ----
+  $('google-btn').addEventListener('click', () => {
+    $('si-error').textContent = '';
+    fbAuth.signInWithPopup(new firebase.auth.GoogleAuthProvider())
+      .catch(err => { $('si-error').textContent = friendlyAuthError(err.code); });
+  });
+
+  // ---- Navigation ----
+  $('go-register').addEventListener('click',   e => { e.preventDefault(); showAuthView('register'); });
+  $('go-reset').addEventListener('click',      e => { e.preventDefault(); showAuthView('reset');    });
+  $('go-signin-reg').addEventListener('click', e => { e.preventDefault(); showAuthView('signin');   });
+  $('go-signin-rst').addEventListener('click', e => { e.preventDefault(); showAuthView('signin');   });
+
+  // ---- Registration: live password requirements ----
+  $('reg-password').addEventListener('input', () => updatePwdReqs($('reg-password').value));
+
+  // ---- Registration: enforce 13+ max on birthday picker ----
+  const maxBday = new Date();
+  maxBday.setFullYear(maxBday.getFullYear() - 13);
+  $('reg-birthday').max = maxBday.toISOString().split('T')[0];
+
+  // ---- Registration: validate → check username uniqueness → send code ----
+  $('reg-btn').addEventListener('click', async () => {
+    const email    = $('reg-email').value.trim();
+    const username = $('reg-username').value.trim();
+    const password = $('reg-password').value;
+    const confirm  = $('reg-confirm').value;
+    const birthday = $('reg-birthday').value;
+    $('reg-error').textContent = '';
+
+    if (!email || !username || !password || !confirm || !birthday) {
+      $('reg-error').textContent = 'Please fill in all fields.'; return;
+    }
+    if (!/^[a-zA-Z0-9_-]{3,20}$/.test(username)) {
+      $('reg-error').textContent = 'Username must be 3–20 characters using only letters, numbers, _ or -.'; return;
+    }
+    if (!allPwdReqsMet(password)) {
+      $('reg-error').textContent = 'Password does not meet all requirements shown below.'; return;
+    }
+    if (password !== confirm) {
+      $('reg-error').textContent = 'Passwords do not match.'; return;
+    }
+    if (!validateAge(birthday)) {
+      $('reg-error').textContent = 'You must be at least 13 years old to create an account.'; return;
+    }
+
+    $('reg-btn').disabled = true;
+    $('reg-btn').textContent = 'Checking username…';
+
+    if (await isUsernameTaken(username)) {
+      $('reg-error').textContent = 'That username is already taken — please choose another.';
+      $('reg-btn').disabled = false;
+      $('reg-btn').textContent = 'Send Verification Code';
+      return;
+    }
+
+    $('reg-btn').textContent = 'Sending code…';
+    try {
+      await startVerification({ email, username, password });
+    } catch {
+      $('reg-error').textContent = 'Failed to send verification email — check your connection.';
+      $('reg-btn').disabled = false;
+      $('reg-btn').textContent = 'Send Verification Code';
+    }
+  });
+
+  // ---- Verification: 6-box auto-advance, backspace, paste ----
+  const codeBoxes = Array.from(document.querySelectorAll('.code-input'));
+  codeBoxes.forEach((box, i) => {
+    box.addEventListener('input', () => {
+      box.value = box.value.replace(/\D/g, '').slice(-1);
+      box.classList.toggle('filled', !!box.value);
+      if (box.value && i < codeBoxes.length - 1) codeBoxes[i + 1].focus();
+    });
+    box.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && !box.value && i > 0) {
+        codeBoxes[i - 1].value = '';
+        codeBoxes[i - 1].classList.remove('filled');
+        codeBoxes[i - 1].focus();
+      }
+      if (e.key === 'Enter') $('verify-btn').click();
+    });
+    box.addEventListener('paste', e => {
+      e.preventDefault();
+      const digits = (e.clipboardData || window.clipboardData)
+        .getData('text').replace(/\D/g, '').slice(0, 6);
+      digits.split('').forEach((ch, j) => {
+        if (codeBoxes[j]) { codeBoxes[j].value = ch; codeBoxes[j].classList.add('filled'); }
+      });
+      (codeBoxes.find(b => !b.value) || codeBoxes[5]).focus();
+    });
+  });
+
+  // ---- Verification: submit ----
+  $('verify-btn').addEventListener('click', async () => {
+    $('verify-error').textContent = '';
+    const code = getEnteredCode();
+    if (code.length < 6) {
+      $('verify-error').textContent = 'Please enter the complete 6-digit code.'; return;
+    }
+    if (!verif || Date.now() > verif.expiresAt) {
+      $('verify-error').textContent = 'Code has expired — please request a new one.'; return;
+    }
+    if (code !== verif.code) {
+      $('verify-error').textContent = 'Incorrect code — please try again.'; return;
+    }
+
+    $('verify-btn').disabled = true;
+    $('verify-btn').textContent = 'Creating account…';
+    try {
+      const { user } = await fbAuth.createUserWithEmailAndPassword(pendingReg.email, pendingReg.password);
+      await user.updateProfile({ displayName: pendingReg.username });
+      await reserveUsername(pendingReg.username, user.uid);
+      clearVerifState();
+      // onAuthStateChanged fires here and hides the overlay automatically
+    } catch (err) {
+      $('verify-error').textContent = friendlyAuthError(err.code);
+      $('verify-btn').disabled = false;
+      $('verify-btn').textContent = 'Create Account';
+    }
+  });
+
+  // ---- Verification: resend ----
+  $('resend-code').addEventListener('click', async e => {
+    e.preventDefault();
+    const link = $('resend-code');
+    link.style.pointerEvents = 'none';
+    link.textContent = 'Sending…';
+    $('verify-error').textContent = '';
+    try {
+      await sendCode();
+      clearCodeInputs();
+      startCountdown();
+      if (EMAILJS_CONFIG.publicKey && !EMAILJS_CONFIG.publicKey.startsWith('YOUR_')) {
+        $('verify-hint').textContent = `New code sent to ${pendingReg.email}.`;
+      }
+    } catch {
+      $('verify-error').textContent = 'Failed to resend — check your connection.';
+    } finally {
+      link.style.pointerEvents = '';
+      link.textContent = 'Resend code';
+    }
+  });
+
+  // ---- Verification: back to registration ----
+  $('go-reg-from-verify').addEventListener('click', e => {
+    e.preventDefault();
+    clearVerifState();
+    $('reg-btn').disabled = false;
+    $('reg-btn').textContent = 'Send Verification Code';
+    showAuthView('register');
+  });
+
+  // ---- Reset password ----
+  $('rst-btn').addEventListener('click', () => {
+    const email = $('rst-email').value.trim();
+    $('rst-error').textContent   = '';
+    $('rst-success').textContent = '';
+    if (!email) { $('rst-error').textContent = 'Please enter your email.'; return; }
+    $('rst-btn').disabled = true;
+    $('rst-btn').textContent = '…';
+    fbAuth.sendPasswordResetEmail(email)
+      .then(() => {
+        $('rst-success').textContent = 'Reset email sent — check your inbox.';
+        $('rst-btn').textContent = 'Sent ✓';
+      })
+      .catch(err => {
+        $('rst-error').textContent = friendlyAuthError(err.code);
+        $('rst-btn').disabled = false;
+        $('rst-btn').textContent = 'Send Reset Email';
+      });
+  });
+  $('rst-email').addEventListener('keydown', e => { if (e.key === 'Enter') $('rst-btn').click(); });
+
+  // ---- Sign out (in profile dropdown) ----
+  $('sign-out-btn').addEventListener('click', () => fbAuth.signOut());
+}
+
+/* ================================================================
+   PROFILE DROPDOWN
+   ================================================================ */
+function initProfileDropdown() {
+  const btn      = $('profile-btn');
+  const dropdown = $('profile-dropdown');
+  if (!btn || !dropdown) return;
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isHidden = dropdown.hidden;
+    dropdown.hidden = !isHidden;
+    btn.setAttribute('aria-expanded', String(isHidden));
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!dropdown.hidden && !btn.contains(e.target) && !dropdown.contains(e.target)) {
+      dropdown.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !dropdown.hidden) {
+      dropdown.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+}
+
+/* ================================================================
+   SAVE LAYOUT TO BINDER
+   ================================================================ */
+let selectedThumbnailUrl = null;
+
+async function openSaveLayoutModal() {
+  if (!currentUser || !fbDb) return;
+  selectedThumbnailUrl = null;
+  $('save-layout-error').textContent = '';
+
+  // Load binders for the select
+  const select = $('save-binder-select');
+  select.innerHTML = '<option value="">Loading…</option>';
+  try {
+    const snap = await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').orderBy('createdAt').get();
+    select.innerHTML = '';
+    snap.docs.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = d.data().name;
+      select.appendChild(opt);
+    });
+    // "+ New Binder" option
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ Create new binder';
+    select.appendChild(newOpt);
+
+    // If no binders exist, default to creating one
+    if (snap.empty) {
+      select.value = '__new__';
+      $('new-binder-row').style.display = '';
+      $('new-binder-name').value = 'My Binder';
+    }
+  } catch {
+    select.innerHTML = '<option value="__new__">+ Create new binder</option>';
+    $('new-binder-row').style.display = '';
+  }
+
+  // Auto layout name
+  try {
+    const binderId = select.value === '__new__' ? null : select.value;
+    await refreshLayoutName(binderId);
+  } catch {}
+
+  // Render thumbnail picker
+  renderThumbnailPicker();
+
+  showModal($('save-layout-modal'));
+}
+
+async function refreshLayoutName(binderId) {
+  if (!binderId || !currentUser || !fbDb) {
+    $('save-layout-name').value = 'Layout 1';
+    return;
+  }
+  try {
+    const snap = await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').doc(binderId)
+      .collection('layouts').get();
+    $('save-layout-name').value = `Layout ${snap.size + 1}`;
+  } catch {
+    $('save-layout-name').value = 'Layout 1';
+  }
+}
+
+function renderThumbnailPicker() {
+  const grid = $('thumbnail-card-grid');
+  grid.innerHTML = '';
+  const cards = Object.values(state.cards);
+  if (cards.length === 0) {
+    grid.innerHTML = '<p class="hint-text" style="padding:10px 0;font-size:0.76rem">No cards in the current layout.</p>';
+    return;
+  }
+  // "Skip" tile
+  const skipTile = document.createElement('div');
+  skipTile.className = 'thumb-tile thumb-skip selected';
+  skipTile.dataset.url = '';
+  skipTile.title = 'Use auto grid preview';
+  skipTile.innerHTML = `<span style="font-size:0.65rem;color:var(--text-muted);text-align:center">Auto<br>Grid</span>`;
+  skipTile.addEventListener('click', () => selectThumb(skipTile, null));
+  grid.appendChild(skipTile);
+
+  cards.forEach(card => {
+    if (!card.imageUrl) return;
+    const tile = document.createElement('div');
+    tile.className = 'thumb-tile';
+    tile.dataset.url = card.imageUrl;
+    tile.title = card.name || '';
+    const img = document.createElement('img');
+    img.src = card.imageUrl;
+    img.alt = card.name || '';
+    tile.appendChild(img);
+    tile.addEventListener('click', () => selectThumb(tile, card.imageUrl));
+    grid.appendChild(tile);
+  });
+}
+
+function selectThumb(tile, url) {
+  document.querySelectorAll('.thumb-tile').forEach(t => t.classList.remove('selected'));
+  tile.classList.add('selected');
+  selectedThumbnailUrl = url;
+}
+
+async function confirmSaveLayout() {
+  const btn = $('confirm-save-layout');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  $('save-layout-error').textContent = '';
+
+  const layoutName  = $('save-layout-name').value.trim() || 'Layout 1';
+  const select      = $('save-binder-select');
+  let   binderId    = select.value;
+  const binderName  = $('new-binder-name').value.trim() || 'My Binder';
+
+  try {
+    const userRef = fbDb.collection('users').doc(currentUser.uid);
+
+    // Create new binder if needed
+    if (binderId === '__new__') {
+      const newBinder = await userRef.collection('binders').add({
+        name: binderName, createdAt: new Date().toISOString(),
+      });
+      binderId = newBinder.id;
+    }
+
+    // Save layout
+    await userRef.collection('binders').doc(binderId).collection('layouts').add({
+      name:         layoutName,
+      layout:       state.layout,
+      bgColor:      state.bgColor,
+      cards:        state.cards,
+      thumbnailUrl: selectedThumbnailUrl || null,
+      createdAt:    new Date().toISOString(),
+    });
+
+    hideModal($('save-layout-modal'));
+  } catch (err) {
+    $('save-layout-error').textContent = 'Failed to save — please try again.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save to Binder';
+  }
 }
 
 /* ----------------------------------------------------------------
    Build the 9 card slots for a page
    ---------------------------------------------------------------- */
+/* ----------------------------------------------------------------
+   Touch drag — long-press to drag cards on mobile
+   ---------------------------------------------------------------- */
+function startTouchDrag(slotId, initTouch) {
+  touchDragSrc = slotId;
+  const srcEl = document.querySelector(`[data-slot-id="${slotId}"]`);
+  const img   = srcEl?.querySelector('img');
+
+  touchGhost = document.createElement('div');
+  touchGhost.className = 'touch-drag-ghost';
+  if (img) {
+    const clone = document.createElement('img');
+    clone.src = img.src;
+    touchGhost.appendChild(clone);
+  }
+  document.body.appendChild(touchGhost);
+  moveTouchGhost(initTouch);
+  srcEl?.classList.add('drag-source');
+  if (navigator.vibrate) navigator.vibrate(40);
+
+  document.addEventListener('touchmove',   onTouchDragMove, { passive: false });
+  document.addEventListener('touchend',    onTouchDragEnd,  { passive: true  });
+  document.addEventListener('touchcancel', onTouchDragEnd,  { passive: true  });
+}
+
+function moveTouchGhost(touch) {
+  if (!touchGhost) return;
+  const style = getComputedStyle(document.documentElement);
+  const w = touchGhost.offsetWidth  || parseFloat(style.getPropertyValue('--card-w'))  || 97;
+  const h = touchGhost.offsetHeight || parseFloat(style.getPropertyValue('--card-h')) || 136;
+  touchGhost.style.left = (touch.clientX - w / 2) + 'px';
+  touchGhost.style.top  = (touch.clientY - h * 0.65) + 'px';
+}
+
+function onTouchDragMove(e) {
+  e.preventDefault();
+  const touch = e.touches[0];
+  moveTouchGhost(touch);
+
+  touchGhost.style.visibility = 'hidden';
+  const el = document.elementFromPoint(touch.clientX, touch.clientY);
+  touchGhost.style.visibility = '';
+
+  document.querySelectorAll('.drag-over').forEach(s => s.classList.remove('drag-over'));
+  const targetEl = el?.closest?.('.card-slot');
+  if (targetEl && targetEl.dataset.slotId !== touchDragSrc) {
+    targetEl.classList.add('drag-over');
+    touchDstSlot = targetEl.dataset.slotId;
+  } else {
+    touchDstSlot = null;
+  }
+}
+
+function onTouchDragEnd() {
+  document.removeEventListener('touchmove',   onTouchDragMove);
+  document.removeEventListener('touchend',    onTouchDragEnd);
+  document.removeEventListener('touchcancel', onTouchDragEnd);
+
+  if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+  document.querySelectorAll('.drag-source').forEach(s => s.classList.remove('drag-source'));
+  document.querySelectorAll('.drag-over').forEach(s => s.classList.remove('drag-over'));
+
+  if (touchDragSrc && touchDstSlot && touchDstSlot !== touchDragSrc) {
+    const src = touchDragSrc, dst = touchDstSlot;
+    const srcCard = state.cards[src] || null;
+    const dstCard = state.cards[dst] || null;
+    if (dstCard) state.cards[src] = dstCard; else delete state.cards[src];
+    if (srcCard) state.cards[dst] = srcCard; else delete state.cards[dst];
+    saveState();
+    renderBinder();
+  }
+
+  touchDragSrc = touchDstSlot = null;
+}
+
 function buildSlots(pageEl, side) {
   pageEl.innerHTML = '';
   for (let i = 0; i < 9; i++) {
@@ -176,6 +890,29 @@ function buildSlots(pageEl, side) {
     });
 
     slot.addEventListener('click', () => openSearch(slotId));
+
+    // ---- Touch drag: long-press to drag (mobile) ----
+    if ('ontouchstart' in window) {
+      let lpTimer = null, lpStartX = 0, lpStartY = 0;
+
+      slot.addEventListener('touchstart', (e) => {
+        if (!state.cards[slotId]) return;
+        const t = e.touches[0];
+        lpStartX = t.clientX; lpStartY = t.clientY;
+        lpTimer = setTimeout(() => { lpTimer = null; startTouchDrag(slotId, t); }, 400);
+      }, { passive: true });
+
+      slot.addEventListener('touchmove', (e) => {
+        if (!lpTimer) return;
+        const t = e.touches[0];
+        if (Math.abs(t.clientX - lpStartX) > 8 || Math.abs(t.clientY - lpStartY) > 8) {
+          clearTimeout(lpTimer); lpTimer = null;
+        }
+      }, { passive: true });
+
+      slot.addEventListener('touchend',   () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } }, { passive: true });
+      slot.addEventListener('touchcancel',() => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } }, { passive: true });
+    }
 
     // ---- Drag: source ----
     slot.addEventListener('dragstart', (e) => {
@@ -216,6 +953,10 @@ function buildSlots(pageEl, side) {
       e.preventDefault();
       slot.classList.remove('drag-over');
       if (!dragSourceSlot || dragSourceSlot === slotId) return;
+
+      // Clean up drag visuals immediately — don't wait for dragend, which can
+      // silently skip when renderBinder() mutates the source slot mid-drag.
+      document.querySelectorAll('.drag-source').forEach(el => el.classList.remove('drag-source'));
 
       const srcCard = state.cards[dragSourceSlot] || null;
       const dstCard = state.cards[slotId]          || null;
@@ -571,6 +1312,20 @@ function updateFilterActiveState() {
 /* ================================================================
    DOWNLOAD LAYOUT
    ================================================================ */
+function drawRoundedRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y,     x + w, y + r,     r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x,     y + h, x,     y + h - r, r);
+  ctx.lineTo(x,     y + r);
+  ctx.arcTo(x,     y,     x + r, y,         r);
+  ctx.closePath();
+}
+
 async function downloadLayout(format) {
   const btn = format === 'png' ? $('dl-png') : $('dl-jpg');
   const origHTML = btn.innerHTML;
@@ -579,25 +1334,79 @@ async function downloadLayout(format) {
 
   try {
     const binder = document.getElementById('binder');
-    const canvas = await html2canvas(binder, {
-      useCORS:         true,
-      allowTaint:      false,
-      scale:           2,
-      backgroundColor: getComputedStyle(document.documentElement)
-                         .getPropertyValue('--binder-bg').trim() || '#3a3a3a',
-      logging:         false,
-    });
+    const { left: bx, top: by, width: bw, height: bh } = binder.getBoundingClientRect();
+    const scale = 2;
 
-    const link      = document.createElement('a');
-    link.download   = `TCGBinder.${format}`;
-    link.href       = canvas.toDataURL(
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = Math.round(bw * scale);
+    offscreen.height = Math.round(bh * scale);
+    const ctx = offscreen.getContext('2d');
+    ctx.scale(scale, scale);
+
+    // Binder background
+    ctx.fillStyle = state.bgColor || '#3a3a3a';
+    ctx.fillRect(0, 0, bw, bh);
+
+    // Load card images fresh with CORS. The ?_cors suffix busts the browser
+    // cache so we get a proper CORS response instead of the opaque cached
+    // entry from the initial non-crossOrigin <img> load.
+    const slotEls = Array.from(binder.querySelectorAll('.card-slot'));
+    const imgBySlot = new Map();
+
+    await Promise.all(slotEls.map(async slot => {
+      const imgEl = slot.querySelector('img[src]');
+      if (!imgEl) return;
+      const img = await new Promise(resolve => {
+        const el = new Image();
+        el.crossOrigin = 'anonymous';
+        el.onload  = () => resolve(el);
+        el.onerror = () => resolve(null);
+        el.src = imgEl.src + (imgEl.src.includes('?') ? '&' : '?') + '_cors';
+      });
+      if (img) imgBySlot.set(slot.dataset.slotId, img);
+    }));
+
+    // Draw each visible slot
+    for (const slot of slotEls) {
+      const sr = slot.getBoundingClientRect();
+      if (!sr.width) continue;  // hidden in single-page mode
+
+      const x = sr.left - bx;
+      const y = sr.top  - by;
+      const w = sr.width;
+      const h = sr.height;
+      const r = 7;
+
+      // Pocket background + border
+      drawRoundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle   = 'rgba(0,0,0,0.32)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+      // Card image, clipped to the slot's rounded rect
+      const img = imgBySlot.get(slot.dataset.slotId);
+      if (img) {
+        ctx.save();
+        drawRoundedRect(ctx, x, y, w, h, r);
+        ctx.clip();
+        ctx.drawImage(img, x, y, w, h);
+        ctx.restore();
+      }
+    }
+
+    const link = document.createElement('a');
+    link.download = `TCGBinder.${format}`;
+    link.href = offscreen.toDataURL(
       format === 'jpg' ? 'image/jpeg' : 'image/png',
       format === 'jpg' ? 0.92 : 1.0
     );
     link.click();
+
   } catch (err) {
     console.error('Download failed:', err);
-    alert('Download failed — card images may be blocked by browser security.\nTry using your OS screenshot tool (Cmd+Shift+4 on Mac).');
+    alert('Download failed — ' + err.message);
   } finally {
     btn.innerHTML = origHTML;
     btn.disabled  = false;
@@ -798,6 +1607,35 @@ function attachEvents() {
     updateFilterActiveState();
   });
 
+  // Header toggle
+  const headerToggle = $('header-toggle');
+  if (headerToggle) {
+    headerToggle.addEventListener('click', () => {
+      document.body.classList.toggle('controls-hidden');
+    });
+  }
+
+  // Profile dropdown
+  initProfileDropdown();
+
+  // Save to Binder
+  $('save-binder-btn').addEventListener('click', openSaveLayoutModal);
+  $('close-save-layout').addEventListener('click', () => hideModal($('save-layout-modal')));
+  $('save-layout-modal').addEventListener('click', (e) => {
+    if (e.target === $('save-layout-modal')) hideModal($('save-layout-modal'));
+  });
+  $('save-binder-select').addEventListener('change', async () => {
+    const val = $('save-binder-select').value;
+    $('new-binder-row').style.display = val === '__new__' ? '' : 'none';
+    if (val !== '__new__') await refreshLayoutName(val);
+  });
+  $('confirm-save-layout').addEventListener('click', confirmSaveLayout);
+
+  // Load layout confirm modal
+  $('load-layout-modal').addEventListener('click', (e) => {
+    if (e.target === $('load-layout-modal')) hideModal($('load-layout-modal'));
+  });
+
   // Preview modal
   closePreview.addEventListener('click', closePreviewModal);
   confirmCard.addEventListener('click', () => {
@@ -827,5 +1665,63 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-/* ---- Start ---- */
-init();
+/* ================================================================
+   BOOTSTRAP  (script is at end of <body>, DOM is ready)
+   ================================================================ */
+buildSlots(leftPage, 'left');
+buildSlots(rightPage, 'right');
+addSpineRings();
+attachEvents();
+
+/* ---- Beta gate ---- */
+(function () {
+  const BETA_KEY  = 'tcgbinder_beta_ok';
+  const BETA_PASS = 'wilson87564';
+  const gate      = $('beta-gate');
+
+  function isSaved() {
+    try { if (localStorage.getItem(BETA_KEY) === '1') return true; } catch {}
+    return document.cookie.split(';').some(c => c.trim().startsWith(BETA_KEY + '=1'));
+  }
+
+  function save() {
+    try { localStorage.setItem(BETA_KEY, '1'); } catch {}
+    const exp = new Date();
+    exp.setFullYear(exp.getFullYear() + 1);
+    document.cookie = BETA_KEY + '=1; expires=' + exp.toUTCString() + '; path=/; SameSite=Lax';
+  }
+
+  function unlock() {
+    gate.style.display = 'none';
+    document.body.classList.remove('beta-locked');
+  }
+
+  if (isSaved()) { unlock(); return; }
+  document.body.classList.add('beta-locked');
+
+  $('beta-btn').addEventListener('click', () => {
+    if ($('beta-password').value === BETA_PASS) {
+      save();
+      unlock();
+    } else {
+      $('beta-error').textContent = 'Incorrect password — try again.';
+      $('beta-password').value = '';
+      $('beta-password').focus();
+    }
+  });
+  $('beta-password').addEventListener('keydown', e => { if (e.key === 'Enter') $('beta-btn').click(); });
+})();
+
+if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.startsWith('YOUR_')) {
+  // Firebase not yet configured — run without auth for local development
+  $('auth-overlay').style.display = 'none';
+  loadState();
+  renderBinder();
+  applyBgColor();
+} else {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  const fbAuth = firebase.auth();
+  fbDb = firebase.firestore();
+  attachAuthEvents(fbAuth);
+  fbAuth.onAuthStateChanged(handleAuthState);
+}
