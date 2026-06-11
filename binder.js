@@ -18,12 +18,26 @@ const $ = (id) => document.getElementById(id);
 
 /* ---- State ---- */
 let currentUser   = null;
-let currentBinder = null;    // { id, name } when inside a binder
+let currentBinder = null;    // { id, name, coverCardUrl } when inside a binder
 let pendingDeleteBinder = null;
 let pendingDeleteLayout = null;
 let pendingRenameBinder = null;
 let pendingRenameLayout = null;
 let pendingLoadLayout   = null;  // { binderId, layoutId, layoutData, layoutName }
+let pendingCoverBinder  = null;  // { id, name } for cover picker
+
+/* ================================================================
+   DARK MODE
+   ================================================================ */
+(function () {
+  const DARK_KEY = 'tcgbinder_dark';
+  try { if (localStorage.getItem(DARK_KEY) === '1') document.body.classList.add('dark-mode'); } catch (e) {}
+  const btn = document.getElementById('dark-mode-btn');
+  if (btn) btn.addEventListener('click', () => {
+    const isDark = document.body.classList.toggle('dark-mode');
+    try { localStorage.setItem(DARK_KEY, isDark ? '1' : '0'); } catch (e) {}
+  });
+})();
 
 /* ================================================================
    AUTH
@@ -83,7 +97,7 @@ function hideModal(id)  { $(id).classList.add('hidden'); }
 function closeAll() {
   ['create-binder-modal','rename-binder-modal','rename-layout-modal',
    'delete-binder-modal','delete-layout-modal','layout-preview-modal',
-   'load-confirm-modal'].forEach(hideModal);
+   'load-confirm-modal','cover-picker-modal'].forEach(hideModal);
 }
 
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
@@ -145,25 +159,46 @@ function renderBindersView(docs) {
 }
 
 function makeBinderCard(id, data) {
+  const thumbContent = data.coverCardUrl
+    ? `<img src="${escHtml(data.coverCardUrl)}" alt="${escHtml(data.name)}" loading="lazy" class="binder-cover-img">`
+    : `<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.25">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+       </svg>`;
+
   const card = document.createElement('div');
   card.className = 'binder-card';
   card.innerHTML = `
     <div class="binder-card-thumb">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.25">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-      </svg>
+      ${thumbContent}
       <div class="binder-open-overlay">Open</div>
     </div>
     <div class="binder-card-info">
       <div class="binder-card-name">${escHtml(data.name)}</div>
       <div class="binder-card-meta" id="meta-${id}">Loading…</div>
     </div>
-    <div class="binder-card-actions">
-      <button class="btn-card-rename" data-id="${id}" data-name="${escHtml(data.name)}">Rename</button>
-      <button class="btn-card-delete" data-id="${id}" data-name="${escHtml(data.name)}">Delete</button>
+    <div class="binder-card-actions icon-actions">
+      <button class="btn-card-cover" title="Set Cover" aria-label="Set Cover">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
+      <button class="btn-card-rename" title="Rename" aria-label="Rename">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+      <button class="btn-card-delete" title="Delete" aria-label="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </button>
     </div>`;
 
-  card.addEventListener('click', () => openBinder(id, data.name));
+  card.addEventListener('click', () => openBinder(id, data.name, data.coverCardUrl));
+  card.querySelector('.btn-card-cover').addEventListener('click',  (e) => { e.stopPropagation(); openCoverPicker(id, data.name, data.coverCardUrl); });
   card.querySelector('.btn-card-rename').addEventListener('click', (e) => { e.stopPropagation(); startRenameBinder(id, data.name); });
   card.querySelector('.btn-card-delete').addEventListener('click', (e) => { e.stopPropagation(); startDeleteBinder(id, data.name); });
 
@@ -181,9 +216,9 @@ function makeBinderCard(id, data) {
 /* ================================================================
    OPEN BINDER → LAYOUTS
    ================================================================ */
-async function openBinder(binderId, binderName) {
+async function openBinder(binderId, binderName, coverCardUrl) {
   showLoading(true);
-  currentBinder = { id: binderId, name: binderName };
+  currentBinder = { id: binderId, name: binderName, coverCardUrl: coverCardUrl || null };
   try {
     const snap = await fbDb.collection('users').doc(currentUser.uid)
       .collection('binders').doc(binderId)
@@ -264,15 +299,36 @@ function makeLayoutCard(id, data) {
       <div class="binder-card-name">${escHtml(data.name)}</div>
       <div class="binder-card-meta">${dateStr} · ${cardCount} card${cardCount !== 1 ? 's' : ''} · ${data.layout === 'double' ? 'Double' : 'Single'} page</div>
     </div>
-    <div class="binder-card-actions">
-      <button class="btn-card-open">Preview</button>
-      <button class="btn-card-rename">Rename</button>
-      <button class="btn-card-delete">Delete</button>
+    <div class="binder-card-actions icon-actions">
+      <button class="btn-card-open" title="Preview" aria-label="Preview">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="btn-card-cover" title="Set as Binder Cover" aria-label="Set as Binder Cover">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+          <polyline points="21 15 16 10 5 21"/>
+        </svg>
+      </button>
+      <button class="btn-card-rename" title="Rename" aria-label="Rename">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+        </svg>
+      </button>
+      <button class="btn-card-delete" title="Delete" aria-label="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="3 6 5 6 21 6"/>
+          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+        </svg>
+      </button>
     </div>`;
 
   card.insertBefore(thumbDiv, card.firstChild);
 
   card.querySelector('.btn-card-open').addEventListener('click',   () => previewLayout(id, data));
+  card.querySelector('.btn-card-cover').addEventListener('click',  (e) => { e.stopPropagation(); openCoverPicker(currentBinder.id, currentBinder.name, currentBinder.coverCardUrl); });
   card.querySelector('.btn-card-rename').addEventListener('click', (e) => { e.stopPropagation(); startRenameLayout(id, data.name); });
   card.querySelector('.btn-card-delete').addEventListener('click', (e) => { e.stopPropagation(); startDeleteLayout(id, data.name); });
 
@@ -464,6 +520,116 @@ $('confirm-delete-layout').addEventListener('click', async () => {
     btn.disabled = false; btn.textContent = 'Delete';
   }
 });
+
+/* ================================================================
+   BINDER COVER PICKER
+   ================================================================ */
+async function openCoverPicker(binderId, binderName, currentCoverUrl) {
+  pendingCoverBinder = { id: binderId, name: binderName };
+
+  $('cover-picker-title').textContent = `Set Cover — ${binderName}`;
+
+  if (currentCoverUrl) {
+    $('cover-current-img').src = currentCoverUrl;
+    $('cover-current-section').style.display = '';
+  } else {
+    $('cover-current-section').style.display = 'none';
+  }
+
+  $('cover-loading').style.display = 'flex';
+  $('cover-cards-container').style.display = 'none';
+  $('cover-empty').style.display = 'none';
+  showModal('cover-picker-modal');
+
+  try {
+    const snap = await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').doc(binderId)
+      .collection('layouts').orderBy('createdAt').get();
+
+    const container = $('cover-cards-container');
+    container.innerHTML = '';
+    let totalCards = 0;
+
+    snap.docs.forEach(doc => {
+      const layout = doc.data();
+      const cards = Object.values(layout.cards || {}).filter(c => c?.imageUrl);
+      if (cards.length === 0) return;
+      totalCards += cards.length;
+
+      const section = document.createElement('div');
+      section.className = 'cover-layout-section';
+      section.innerHTML = `<div class="cover-layout-label">${escHtml(layout.name)}</div>`;
+
+      const grid = document.createElement('div');
+      grid.className = 'cover-card-grid';
+
+      cards.forEach(card => {
+        const tile = document.createElement('div');
+        tile.className = 'thumb-tile' + (card.imageUrl === currentCoverUrl ? ' selected' : '');
+        const img = document.createElement('img');
+        img.src = card.imageUrl;
+        img.alt = card.name || '';
+        img.loading = 'lazy';
+        tile.appendChild(img);
+        tile.addEventListener('click', () => setCoverCard(card.imageUrl));
+        grid.appendChild(tile);
+      });
+
+      section.appendChild(grid);
+      container.appendChild(section);
+    });
+
+    $('cover-loading').style.display = 'none';
+    if (totalCards === 0) {
+      $('cover-empty').style.display = '';
+    } else {
+      container.style.display = '';
+    }
+  } catch (e) {
+    $('cover-loading').style.display = 'none';
+    $('cover-empty').textContent = 'Failed to load cards. Please try again.';
+    $('cover-empty').style.display = '';
+  }
+}
+
+async function setCoverCard(imageUrl) {
+  if (!pendingCoverBinder) return;
+  try {
+    await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').doc(pendingCoverBinder.id)
+      .update({ coverCardUrl: imageUrl });
+    if (currentBinder?.id === pendingCoverBinder.id) {
+      currentBinder.coverCardUrl = imageUrl;
+    }
+    hideModal('cover-picker-modal');
+    loadBinders();
+  } catch (e) {
+    alert('Failed to set cover. Please try again.');
+  }
+}
+
+async function removeCover() {
+  if (!pendingCoverBinder) return;
+  const btn = $('remove-cover-btn');
+  btn.disabled = true; btn.textContent = 'Removing…';
+  try {
+    await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').doc(pendingCoverBinder.id)
+      .update({ coverCardUrl: firebase.firestore.FieldValue.delete() });
+    if (currentBinder?.id === pendingCoverBinder.id) {
+      currentBinder.coverCardUrl = null;
+    }
+    hideModal('cover-picker-modal');
+    loadBinders();
+  } catch (e) {
+    alert('Failed to remove cover. Please try again.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Remove Cover';
+  }
+}
+
+$('close-cover-picker').addEventListener('click', () => hideModal('cover-picker-modal'));
+$('remove-cover-btn').addEventListener('click', removeCover);
 
 /* ================================================================
    RENAME CURRENT BINDER (in-view button)

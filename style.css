@@ -2,6 +2,15 @@
    PokéTopia — style.css
    ================================================================ */
 
+@font-face {
+  font-family: 'Crewniverse';
+  src: url('crewniverse-font/Crewniverse-p6Jr.otf') format('opentype'),
+       url('crewniverse-font/Crewniverse-KYqZ.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* ---- Variables ---- */
 :root {
   --binder-bg: #3a3a3a;
@@ -9,7 +18,8 @@
   --pocket-border: rgba(0, 0, 0, 0.45);
   --pocket-hover: rgba(108, 99, 255, 0.5);
 
-  --header-bg: #141420;
+  --header-bg: #dee4e7;
+  --header-border: rgba(0, 0, 0, 0.1);
   --panel-bg: #1a1a2e;
   --panel-border: #2a2a3e;
   --result-hover: rgba(255, 255, 255, 0.05);
@@ -38,18 +48,8 @@ html, body { height: 100%; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: #b8966a;
-  background-image:
-    repeating-linear-gradient(
-      45deg,
-      rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px,
-      transparent 1px, transparent 8px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px,
-      transparent 1px, transparent 8px
-    );
+  background-color: #ffffff;
+  background-image: none;
   color: var(--text);
   display: flex;
   flex-direction: column;
@@ -65,21 +65,28 @@ body {
   justify-content: space-between;
   padding: 10px 24px;
   background: var(--header-bg);
-  border-bottom: 1px solid #22223a;
+  border-bottom: 1px solid var(--header-border);
   flex-shrink: 0;
   z-index: 20;
   gap: 16px;
 }
 
 .logo {
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(125deg, #ffe566 0%, #ff9a3c 50%, #ff4fa3 100%);
+  font-family: 'Crewniverse', sans-serif;
+  font-size: 1.6rem;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+  background: linear-gradient(to bottom, #1a1a2e 50%, #5850d9 50%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   white-space: nowrap;
+}
+body.dark-mode .logo {
+  background: linear-gradient(to bottom, #ffe566 50%, #ff4fa3 50%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .header-controls {
@@ -779,6 +786,156 @@ body.controls-hidden .header-controls { max-height: 0; }
 ::-webkit-scrollbar-thumb:hover { background: #5a5a7a; }
 
 /* ================================================================
+   DARK MODE
+   ================================================================ */
+body.dark-mode {
+  background-color: #0d0d18;
+  background-image: none;
+  --header-bg: #141420;
+  --header-border: #22223a;
+}
+
+/* body.dark-mode .logo already covers subpage-header .logo — no separate rule needed */
+
+/* ---- Light mode header text overrides ---- */
+/* Header buttons and controls need dark text on the light #dee4e7 header */
+body:not(.dark-mode) .header .btn-outline,
+body:not(.dark-mode) .header .color-wrap {
+  color: #1a1a2e;
+  border-color: rgba(26, 26, 46, 0.2);
+  background: rgba(0, 0, 0, 0.05);
+}
+body:not(.dark-mode) .header .btn-outline:hover,
+body:not(.dark-mode) .header .color-wrap:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+body:not(.dark-mode) .header .btn-outline:active,
+body:not(.dark-mode) .header .color-wrap:active { transform: scale(0.96); }
+
+body:not(.dark-mode) .header .icon-btn,
+body:not(.dark-mode) .subpage-header .icon-btn {
+  color: #555e6e;
+}
+body:not(.dark-mode) .header .icon-btn:hover,
+body:not(.dark-mode) .subpage-header .icon-btn:hover {
+  color: #1a1a2e;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+body:not(.dark-mode) .header-toggle-btn {
+  color: #555e6e;
+  border-color: rgba(0, 0, 0, 0.15);
+  background: rgba(0, 0, 0, 0.04);
+}
+body:not(.dark-mode) .header-toggle-btn:active {
+  background: rgba(0, 0, 0, 0.1);
+  color: #1a1a2e;
+}
+
+body:not(.dark-mode) .subpage-back         { color: #555e6e; }
+body:not(.dark-mode) .subpage-back:hover   { color: #1a1a2e; background: rgba(0,0,0,0.06); }
+
+/* bg-transparent active state needs to stay visible on light header */
+body:not(.dark-mode) .header #bg-transparent.active {
+  background: rgba(88, 80, 217, 0.12);
+  border-color: #5850d9;
+  color: #5850d9;
+}
+
+/* Dark mode toggle button icon state */
+#dark-mode-btn .icon-sun  { display: none; }
+#dark-mode-btn .icon-moon { display: block; }
+body.dark-mode #dark-mode-btn .icon-sun  { display: block; }
+body.dark-mode #dark-mode-btn .icon-moon { display: none; }
+
+/* ================================================================
+   LIGHT MODE — SUBPAGE (binder.html + profile.html)
+   ================================================================ */
+
+/* Page background — .subpage-body IS the body element, so target it directly */
+.subpage-body:not(.dark-mode) {
+  background: #ffffff;
+}
+
+/* Cascade dark text through all subpage page content */
+body:not(.dark-mode) .subpage-main {
+  color: #1a1a2e;
+}
+
+/* "My Binders" / "Layouts" heading and icon explicitly dark */
+body:not(.dark-mode) .binder-page-title {
+  color: #1a1a2e;
+}
+
+/* Modals are always dark — restore white text so cascade doesn't break them */
+body:not(.dark-mode) .modal,
+body:not(.dark-mode) .subpage-modal-overlay .modal {
+  color: var(--text);
+}
+
+/* ---- Binder / layout cards ---- */
+body:not(.dark-mode) .binder-card {
+  background: #f4f4f8;
+  border-color: #dddde8;
+}
+body:not(.dark-mode) .binder-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+body:not(.dark-mode) .binder-card-thumb {
+  background: #e8e8f2;
+}
+body:not(.dark-mode) .binder-card-info {
+  border-top-color: #e0e0ea;
+}
+body:not(.dark-mode) .binder-card-actions {
+  border-top-color: #e0e0ea;
+}
+body:not(.dark-mode) .binder-card-mini-grid .mini-empty {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* New binder dashed placeholder card */
+body:not(.dark-mode) .new-binder-card {
+  border-color: #c8c8d8;
+}
+
+/* Icon buttons within light cards */
+body:not(.dark-mode) .subpage-main .icon-btn:hover {
+  color: #1a1a2e;
+  background: rgba(0, 0, 0, 0.07);
+}
+body:not(.dark-mode) .binder-card-actions.icon-actions .btn-card-rename {
+  color: #8888a8;
+}
+body:not(.dark-mode) .binder-card-actions.icon-actions .btn-card-rename:hover {
+  background: rgba(0, 0, 0, 0.07);
+  color: #1a1a2e;
+}
+
+/* ---- Profile sections (profile.html) ---- */
+body:not(.dark-mode) .profile-section {
+  background: #f4f4f8;
+  border-color: #dddde8;
+}
+
+/* Form inputs within profile sections */
+body:not(.dark-mode) .profile-section .auth-field input,
+body:not(.dark-mode) .profile-section .inline-edit-input {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.14);
+  color: #1a1a2e;
+}
+body:not(.dark-mode) .profile-section .auth-field input::placeholder {
+  color: #9a9ab0;
+}
+body:not(.dark-mode) .profile-section .auth-field input:focus,
+body:not(.dark-mode) .profile-section .inline-edit-input:focus {
+  background: rgba(0, 0, 0, 0.07);
+  border-color: var(--accent);
+}
+
+/* ================================================================
    AUTH OVERLAY
    ================================================================ */
 .beta-gate {
@@ -843,10 +1000,11 @@ body.beta-locked > *:not(#beta-gate) {
 }
 
 .auth-logo {
-  font-size: 1.75rem;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(125deg, #ffe566 0%, #ff9a3c 50%, #ff4fa3 100%);
+  font-family: 'Crewniverse', sans-serif;
+  font-size: 2rem;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+  background: linear-gradient(to bottom, #ffe566 50%, #ff4fa3 50%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1347,14 +1505,15 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 }
 
 .subpage-header {
   display: flex;
   align-items: center;
   padding: 10px 24px;
-  background: #141420;
-  border-bottom: 1px solid #22223a;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--header-border);
   gap: 16px;
   flex-shrink: 0;
   position: sticky;
@@ -1375,16 +1534,18 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
 }
 .subpage-back:hover { background: rgba(255,255,255,0.07); color: var(--text, #e8e8f0); }
 .subpage-header .logo {
-  font-size: 1.2rem;
-  font-weight: 800;
-  background: linear-gradient(125deg, #ffe566 0%, #ff9a3c 50%, #ff4fa3 100%);
+  font-family: 'Crewniverse', sans-serif;
+  font-size: 1.3rem;
+  font-weight: normal;
+  letter-spacing: 0.5px;
+  background: linear-gradient(to bottom, #1a1a2e 50%, #5850d9 50%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
   white-space: nowrap;
   text-decoration: none;
 }
-.subpage-header .profile-area { margin-left: auto; }
+.subpage-header .profile-area { margin-left: 8px; }
 
 .subpage-main {
   flex: 1;
@@ -1522,12 +1683,109 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
   cursor: pointer;
   transition: background 0.12s;
 }
+
+/* Icon-only action buttons (layout cards & binder cards) */
+.binder-card-actions.icon-actions {
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 8px 10px;
+}
+.binder-card-actions.icon-actions button {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.binder-card-actions.icon-actions button svg { pointer-events: none; }
+.binder-card-actions.icon-actions .btn-card-open   { color: #7eb5f0; }
+.binder-card-actions.icon-actions .btn-card-open:hover   { background: rgba(126,181,240,0.14); }
+.binder-card-actions.icon-actions .btn-card-cover  { color: #ffaa40; }
+.binder-card-actions.icon-actions .btn-card-cover:hover  { background: rgba(255,170,64,0.15); }
+.binder-card-actions.icon-actions .btn-card-rename { color: var(--text-muted); }
+.binder-card-actions.icon-actions .btn-card-rename:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+.binder-card-actions.icon-actions .btn-card-delete { color: var(--danger); }
+.binder-card-actions.icon-actions .btn-card-delete:hover { background: rgba(224,82,82,0.14); }
 .btn-card-open   { background: rgba(108,99,255,0.18); color: var(--accent, #6c63ff); }
 .btn-card-open:hover   { background: rgba(108,99,255,0.28); }
 .btn-card-rename { background: rgba(255,255,255,0.07); color: var(--text-muted, #7a7a9a); }
 .btn-card-rename:hover { background: rgba(255,255,255,0.12); }
 .btn-card-delete { background: rgba(224,82,82,0.13); color: var(--danger, #e05252); }
 .btn-card-delete:hover { background: rgba(224,82,82,0.22); }
+
+/* Cover image fills the binder card thumb */
+.binder-cover-img {
+  max-width: 60%;
+  max-height: 90%;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.55);
+}
+
+/* Cover button style */
+.btn-card-cover { background: rgba(255,170,64,0.12); color: #ffaa40; }
+.btn-card-cover:hover { background: rgba(255,170,64,0.24); }
+
+/* ================================================================
+   COVER PICKER MODAL
+   ================================================================ */
+.cover-picker-inner {
+  width: 90vw;
+  max-width: 560px;
+  max-height: 80vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cover-picker-inner h3 { font-size: 1rem; font-weight: 700; }
+.cover-picker-hint {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: -6px;
+}
+.cover-current-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  background: rgba(108, 99, 255, 0.08);
+  border: 1px solid rgba(108, 99, 255, 0.22);
+  border-radius: 8px;
+}
+.cover-current-row img {
+  width: 52px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 5px;
+  background: rgba(0,0,0,0.3);
+  flex-shrink: 0;
+}
+.cover-layout-section { }
+.cover-layout-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--panel-border);
+}
+.cover-layout-section:first-child .cover-layout-label {
+  border-top: none;
+  padding-top: 0;
+}
+.cover-card-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
 
 .new-binder-card {
   background: transparent;

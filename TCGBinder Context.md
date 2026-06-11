@@ -1,6 +1,6 @@
 # TCGBinder — Session Context
 
-_Last updated: 2026-06-10_
+_Last updated: 2026-06-11_
 
 ---
 
@@ -10,6 +10,7 @@ _Last updated: 2026-06-10_
 
 - **Live URL:** `https://tcgbinder-f3a18.web.app` (Firebase Hosting)
 - **Project folder (Mac):** `/Users/bingo/Documents/TCGBinder/`
+- **Project folder (Windows):** `C:\TCGBinder\`
 - **Firebase project ID:** `tcgbinder-f3a18`
 - **Deploy command:** `firebase deploy` (run from project folder)
 - **Firebase CLI:** installed globally via `sudo npm install -g firebase-tools`
@@ -19,16 +20,19 @@ _Last updated: 2026-06-10_
 ## File Structure
 
 ```
-/Users/bingo/Documents/TCGBinder/
-  index.html        — Main layout tool (binder + card search)
-  app.js            — All JS for index.html
-  style.css         — Shared styles across all pages
-  binder.html       — My Binder gallery page (view/load/delete layouts)
-  binder.js         — JS for binder.html
-  profile.html      — Account Settings page
-  profile.js        — JS for profile.html
-  firebase.json     — Firebase Hosting config (public: ".")
-  .firebaserc       — Firebase project binding (tcgbinder-f3a18)
+TCGBinder/
+  index.html          — Main layout tool (binder + card search)
+  app.js              — All JS for index.html
+  style.css           — Shared styles across all pages
+  binder.html         — My Binder gallery page (view/load/delete layouts)
+  binder.js           — JS for binder.html
+  profile.html        — Account Settings page
+  profile.js          — JS for profile.html
+  firebase.json       — Firebase Hosting config (public: ".")
+  .firebaserc         — Firebase project binding (tcgbinder-f3a18)
+  crewniverse-font/   — Custom logo font files
+    Crewniverse-p6Jr.otf
+    Crewniverse-KYqZ.ttf
   TCGBinder Context.md — This file
 ```
 
@@ -180,7 +184,15 @@ service cloud.firestore {
 - Lists all binders as cards (name, layout count)
 - **Click anywhere on a binder card** → opens that binder
 - Hover over card → dark overlay fades in on thumbnail with centered "Open" label (`pointer-events: none`)
-- Rename and Delete buttons remain in the card footer (with `stopPropagation`)
+- **Icon action buttons** on both binder and layout cards (replaced text buttons):
+  - Binder cards: Cover (image/book icon, amber `#ffaa40`), Rename (pencil, muted), Delete (trash, red)
+  - Layout cards: Preview (eye, blue), Cover (image, amber), Rename (pencil, muted), Delete (trash, red)
+  - Icon buttons are 30×30px, right-aligned, with tooltips (`title` attribute)
+- **Binder cover image**: click the Cover icon to pick any card from any layout in that binder as its cover image
+  - Cover picker modal shows all layouts and their cards as a grid
+  - Current cover previewed at top with a "Remove Cover" option
+  - Cover URL stored on the binder doc as `coverCardUrl` in Firestore; removed with `FieldValue.delete()`
+  - Binder card thumbnail shows the cover image if set, otherwise defaults to 3×3 mini-grid or book icon placeholder
 - Each layout card: thumbnail (featured card OR 3×3 mini grid), name, date, card count, page type
 - Click layout → full preview modal showing the card grid
 - Preview → "Load this Layout" → confirmation → stores `{ binderId, layoutId, layoutData, layoutName }` in `sessionStorage` key `tcgbinder_load` → redirects to `index.html` which applies it and sets `loadedLayoutRef`
@@ -194,6 +206,21 @@ service cloud.firestore {
 
 ---
 
+### Dark / Light Mode (all pages)
+- Toggle button (moon/sun icon) in the header of every page
+- `localStorage` key `tcgbinder_dark`: `'1'` = dark, `'0'` = light
+- `body.dark-mode` class drives all theme changes via CSS
+- **index.html:** `body { background: #ffffff }` default (light); `body.dark-mode { background: #0d0d18 }`
+- **binder.html / profile.html (subpages):**
+  - `.subpage-body` base style is dark (`#0d0d18`)
+  - Light mode override: `.subpage-body:not(.dark-mode) { background: #ffffff }` — note: `.subpage-body` IS the `<body>` element, so a descendant selector would not match; must target it directly
+  - Card surfaces: `#f4f4f8` bg / `#dddde8` border in light mode
+  - Card text cascades from `body:not(.dark-mode) .subpage-main { color: #1a1a2e }`
+  - Modals always dark (`background: #1c1c30`) — not inside `.subpage-main`, so unaffected by the cascade
+  - Profile section inputs: `rgba(0,0,0,0.04)` bg, `rgba(0,0,0,0.14)` border, `#1a1a2e` text in light mode
+
+---
+
 ## Mobile Improvements
 
 - **Responsive card sizes** via CSS custom property overrides in media queries:
@@ -203,6 +230,7 @@ service cloud.firestore {
 - **Remove button**: always visible on mobile (`≤640px`), not just on hover
 - **Touch drag**: long-press (400ms) any card to enter drag mode; movement >8px during wait cancels it
 - **Save to Gallery button**: only rendered at `≤640px` (CSS `display: none` on desktop, `inline-flex` on mobile)
+- **Subpage scroll fix**: `body { overflow: hidden }` (needed for index.html binder area) was blocking scroll on binder/profile pages; fixed by adding `overflow-y: auto` to `.subpage-body` (higher specificity wins)
 
 ---
 
@@ -250,15 +278,34 @@ let loadedLayoutRef   = null   // { binderId, layoutId, layoutName } when layout
 --page-pad:     30px
 --spine-w:      22px
 --accent:       #6c63ff
+--accent-hover: #574fd4
 --danger:       #e05252
 --success:      #4caf76
---header-bg:    #141420
---panel-bg:     #1a1a2e
+--text:         #e8e8f0      /* near-white; used throughout */
+--text-muted:   #7a7a9a
+--header-bg:    #dee4e7      /* light mode default; overridden in dark mode */
+--header-border: rgba(0,0,0,0.1)
 ```
 
-### Page Background
-- `body` background: `#b8966a` (warm craft-paper tan) with a subtle diagonal canvas-weave texture via layered `repeating-linear-gradient`
-- Header retains its own dark background (`#141420`)
+Dark mode overrides (applied via `body.dark-mode`):
+```css
+--header-bg:    #141420
+--header-border: #22223a
+```
+
+### Page Background & Theming
+- **Light mode (default):** `body` background `#ffffff`; header `#dee4e7`
+- **Dark mode:** `body` background `#0d0d18`; header `#141420`
+- Mode persisted in `localStorage` key `tcgbinder_dark` (`'1'` = dark, `'0'` = light)
+- Early inline `<script>` on `<body>` applies `dark-mode` class before first paint on subpages (prevents flash)
+- `body.dark-mode` class toggles both index.html and subpages; toggle button in all page headers
+
+### Logo Font & Gradient
+- Font: **Crewniverse** (`crewniverse-font/Crewniverse-p6Jr.otf` + `.ttf` fallback), loaded via `@font-face`
+- Color: sharp 50/50 horizontal split via `background-clip: text` + `linear-gradient(to bottom, colorA 50%, colorB 50%)`
+- **Light mode logo:** dark split — top `#1a1a2e`, bottom `#5850d9`
+- **Dark mode logo:** warm split — top `#ffe566`, bottom `#ff4fa3`
+- Auth modal logo always uses warm split (it sits on a dark card regardless of mode)
 
 ---
 
@@ -279,16 +326,31 @@ let loadedLayoutRef   = null   // { binderId, layoutId, layoutName } when layout
 | Drag left source slot permanently transparent | Chromium silently skips `dragend` when DOM mutated during `drop` | Clean up `.drag-source` class at start of `drop` handler |
 | Beta gate reappeared on Opera GX despite clearing cookies | Opera GX blocks localStorage | Now saves to both localStorage AND `document.cookie` |
 | Profile photo save error | `update()` fails on non-existent Firestore doc (Google users) | Changed to `set({ photoData }, { merge: true })` |
+| Binder cards cut off on mobile — can't scroll | `body { overflow: hidden }` blocked subpage scroll | Added `overflow-y: auto` to `.subpage-body` |
+| Light mode background not applying on subpages | `body:not(.dark-mode) .subpage-body` is a descendant selector, but `.subpage-body` IS the body element | Changed to `.subpage-body:not(.dark-mode)` to target the element directly |
+| Old diagonal gradient persisting on subpage logo in dark mode | Leftover `body.dark-mode .subpage-header .logo` rule with old gradient wasn't removed | Replaced with comment; `body.dark-mode .logo` rule already covers it |
+
+---
+
+## Firestore Data Structure (updated)
+
+```
+/users/{uid}/binders/{binderId}
+  → { name, createdAt, coverCardUrl? }   ← coverCardUrl added for binder cover image feature
+```
 
 ---
 
 ## Deployment
 
 ```bash
-cd /Users/bingo/Documents/TCGBinder
-firebase deploy
+# Mac
+cd /Users/bingo/Documents/TCGBinder && firebase deploy
+
+# Windows
+cd C:\TCGBinder && firebase deploy --only hosting
 ```
 
-Requires: Node.js installed, `firebase-tools` installed globally (`sudo npm install -g firebase-tools`), logged in (`firebase login`).
+Requires: Node.js installed, `firebase-tools` installed globally, logged in (`firebase login`).
 
 GitHub repo: `https://github.com/bingoh87564/TCGBinder`

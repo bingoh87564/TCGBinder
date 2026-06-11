@@ -1727,6 +1727,22 @@ function loadState() {
 }
 
 /* ================================================================
+   DARK MODE
+   ================================================================ */
+const DARK_KEY = 'tcgbinder_dark';
+
+function initDarkMode() {
+  try {
+    if (localStorage.getItem(DARK_KEY) === '1') document.body.classList.add('dark-mode');
+  } catch (e) {}
+}
+
+function toggleDarkMode() {
+  const isDark = document.body.classList.toggle('dark-mode');
+  try { localStorage.setItem(DARK_KEY, isDark ? '1' : '0'); } catch (e) {}
+}
+
+/* ================================================================
    MODAL HELPERS
    ================================================================ */
 function showModal(el) {
@@ -1801,6 +1817,10 @@ function attachEvents() {
     });
   }
 
+  // Dark mode toggle
+  const darkModeBtn = $('dark-mode-btn');
+  if (darkModeBtn) darkModeBtn.addEventListener('click', toggleDarkMode);
+
   // Sign in button (shown when signed out)
   $('signin-btn').addEventListener('click', openAuthModal);
 
@@ -1864,6 +1884,7 @@ function escHtml(str) {
 /* ================================================================
    BOOTSTRAP  (script is at end of <body>, DOM is ready)
    ================================================================ */
+initDarkMode();
 buildSlots(leftPage, 'left');
 buildSlots(rightPage, 'right');
 addSpineRings();

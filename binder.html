@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="subpage-body">
+<script>(function(){try{if(localStorage.getItem('tcgbinder_dark')==='1')document.body.classList.add('dark-mode');}catch(e){}})()</script>
 
   <!-- ========== HEADER ========== -->
   <header class="subpage-header">
@@ -17,6 +18,17 @@
       </svg>
       Back to App
     </a>
+    <button id="dark-mode-btn" class="icon-btn" style="margin-left:auto" title="Toggle dark mode" aria-label="Toggle dark mode">
+      <svg class="icon-moon" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+      </svg>
+      <svg class="icon-sun" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+        <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+      </svg>
+    </button>
     <div id="profile-area" class="profile-area" style="display:none">
       <button id="profile-btn" class="profile-btn" aria-label="Profile menu" aria-expanded="false">
         <span id="profile-avatar" class="profile-avatar"></span>
@@ -183,6 +195,37 @@
         <button id="cancel-load-layout-btn" class="btn btn-outline">Cancel</button>
         <button id="load-layout-btn" class="btn btn-primary">Load this Layout</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ========== COVER PICKER MODAL ========== -->
+  <div class="subpage-modal-overlay hidden" id="cover-picker-modal">
+    <div class="modal cover-picker-inner">
+      <button class="modal-close" id="close-cover-picker">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+      <h3 id="cover-picker-title">Set Binder Cover</h3>
+      <p class="cover-picker-hint">Choose any card to use as the cover image for this binder.</p>
+
+      <!-- Current cover (shown only when one is already set) -->
+      <div id="cover-current-section" style="display:none">
+        <p class="save-section-label">Current cover</p>
+        <div class="cover-current-row">
+          <img id="cover-current-img" src="" alt="Current cover">
+          <button id="remove-cover-btn" class="btn btn-outline">Remove Cover</button>
+        </div>
+      </div>
+
+      <!-- Loading -->
+      <div id="cover-loading" class="spinner-wrap"><div class="spinner"></div></div>
+
+      <!-- Cards from all layouts -->
+      <div id="cover-cards-container" style="display:none"></div>
+
+      <!-- Empty state -->
+      <p id="cover-empty" class="hint-text" style="display:none">No cards in this binder yet.</p>
     </div>
   </div>
 

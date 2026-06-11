@@ -20,6 +20,19 @@ let currentUser = null;
 let userData    = null;  // Firestore user doc
 
 /* ================================================================
+   DARK MODE
+   ================================================================ */
+(function () {
+  const DARK_KEY = 'tcgbinder_dark';
+  try { if (localStorage.getItem(DARK_KEY) === '1') document.body.classList.add('dark-mode'); } catch (e) {}
+  const btn = document.getElementById('dark-mode-btn');
+  if (btn) btn.addEventListener('click', () => {
+    const isDark = document.body.classList.toggle('dark-mode');
+    try { localStorage.setItem(DARK_KEY, isDark ? '1' : '0'); } catch (e) {}
+  });
+})();
+
+/* ================================================================
    AUTH
    ================================================================ */
 fbAuth.onAuthStateChanged(async user => {
