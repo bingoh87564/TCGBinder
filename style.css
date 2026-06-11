@@ -38,7 +38,18 @@ html, body { height: 100%; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #0d0d18;
+  background-color: #b8966a;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(255,255,255,0.07) 0px, rgba(255,255,255,0.07) 1px,
+      transparent 1px, transparent 8px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px,
+      transparent 1px, transparent 8px
+    );
   color: var(--text);
   display: flex;
   flex-direction: column;
@@ -135,6 +146,32 @@ body.controls-hidden .header-controls { max-height: 0; }
 .dl-group .btn {
   padding: 7px 10px;
   font-size: 0.78rem;
+}
+
+/* Gallery save button — only shown on mobile */
+#dl-gallery { display: none; }
+
+/* Transparent background toggle */
+#bg-transparent.active {
+  background: rgba(108,99,255,0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.color-wrap.dimmed {
+  opacity: 0.38;
+  pointer-events: none;
+}
+
+/* Checkerboard shown in the UI when transparent mode is on */
+.binder-transparent .binder-page {
+  background-color: transparent;
+  background-image:
+    linear-gradient(45deg, rgba(255,255,255,0.10) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(255,255,255,0.10) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,0.10) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(255,255,255,0.10) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
 }
 
 .color-wrap {
@@ -778,13 +815,21 @@ body.beta-locked > *:not(#beta-gate) {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: #0d0d18;
+  background: rgba(0,0,0,0.82);
+  backdrop-filter: blur(6px);
   z-index: 200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 20px;
+  padding: 32px 20px;
+  overflow-y: auto;
+  opacity: 0;
+  pointer-events: none;
   transition: opacity 0.25s;
+}
+.auth-overlay.visible {
+  opacity: 1;
+  pointer-events: all;
 }
 
 .auth-card {
@@ -910,8 +955,6 @@ body.beta-locked > *:not(#beta-gate) {
 }
 .auth-links a:hover { color: var(--accent); }
 
-/* Long forms (register view) — let the overlay scroll */
-.auth-overlay { overflow-y: auto; align-items: flex-start; padding: 32px 20px; }
 @media (min-height: 700px) { .auth-overlay { align-items: center; } }
 
 .auth-label-hint {
@@ -1086,6 +1129,9 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
 
   /* Always show remove button — no hover on touch */
   .card-slot.has-card .remove-btn { display: flex; }
+
+  /* Show gallery save button */
+  #dl-gallery { display: inline-flex; }
 }
 
 /* Extra small screens (older iPhones, small Androids) */
@@ -1192,6 +1238,58 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
   overflow-y: auto;
 }
 .save-layout-inner h3 { font-size: 1rem; font-weight: 700; margin-bottom: 18px; }
+
+/* Overwrite-existing-layout row */
+.overwrite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(108,99,255,0.10);
+  border: 1px solid rgba(108,99,255,0.28);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.overwrite-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.overwrite-label {
+  font-size: 0.67rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+.overwrite-name {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+.save-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 14px;
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+.save-divider::before,
+.save-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #2a2a44;
+}
+
 .sl-select {
   width: 100%;
   background: rgba(255,255,255,0.05);
@@ -1354,6 +1452,24 @@ body.controls-hidden .header-toggle-btn svg { transform: rotate(180deg); }
   border-radius: 4px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.5);
 }
+
+.binder-open-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.52);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.18s;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+.binder-card:hover .binder-open-overlay { opacity: 1; }
 .binder-card-mini-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

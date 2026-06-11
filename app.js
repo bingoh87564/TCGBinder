@@ -113,11 +113,12 @@ let touchDstSlot = null;
    State
    ---------------------------------------------------------------- */
 const state = {
-  layout: 'single',          // 'single' | 'double'
-  bgColor: '#3a3a3a',
-  cards: {},                 // { 'left-0': { id, name, imageUrl, setName }, … }
-  selectedSlot: null,        // currently open slot id
-  previewCard: null,         // card shown in preview modal
+  layout:        'single',   // 'single' | 'double'
+  bgColor:       '#3a3a3a',
+  bgTransparent: false,      // true = transparent PNG export; shows checkerboard in UI
+  cards:         {},         // { 'left-0': { id, name, imageUrl, setName }, … }
+  selectedSlot:  null,       // currently open slot id
+  previewCard:   null,       // card shown in preview modal
 };
 
 /* ----------------------------------------------------------------
@@ -177,6 +178,8 @@ let pendingReg     = null;   // { email, username, password } held during code v
 let verif          = null;   // { code, expiresAt }
 let countdownTimer = null;
 let fbDb           = null;   // Firestore instance (initialised in bootstrap)
+let pendingSave      = false;  // true when an unauthenticated user triggered Save to Binder
+let loadedLayoutRef  = null;   // { binderId, layoutId, layoutName } when a layout was loaded from the binder page
 
 /* ================================================================
    AUTH — view & error helpers
@@ -332,6 +335,23 @@ function getEnteredCode() {
 }
 
 /* ================================================================
+   AUTH — modal open / close
+   ================================================================ */
+function openAuthModal() {
+  showAuthView('signin');
+  $('auth-overlay').classList.add('visible');
+}
+
+function closeAuthModal() {
+  $('auth-overlay').classList.remove('visible');
+  pendingSave = false;
+  clearVerifState();
+  showAuthView('signin');
+  [['si-btn','Sign In'], ['reg-btn','Send Verification Code'], ['rst-btn','Send Reset Email']]
+    .forEach(([id, label]) => { const b = $(id); if (b) { b.disabled = false; b.textContent = label; } });
+}
+
+/* ================================================================
    AUTH — state handler
    ================================================================ */
 function setProfileAvatar(user, userData) {
@@ -350,15 +370,11 @@ function setProfileAvatar(user, userData) {
 }
 
 function handleAuthState(user) {
-  const overlay = $('auth-overlay');
-
   if (user) {
     currentUser = user;
-    overlay.style.opacity       = '0';
-    overlay.style.pointerEvents = 'none';
-    $('profile-area').style.display    = 'flex';
-    $('save-binder-btn').style.display = '';
-    clearVerifState();
+    closeAuthModal();
+    $('profile-area').style.display = 'flex';
+    $('signin-btn').style.display   = 'none';
     loadState();
     renderBinder();
     applyBgColor();
@@ -377,9 +393,11 @@ function handleAuthState(user) {
       try {
         const { binderId, layoutId, layoutData, layoutName } = JSON.parse(pending);
         const doLoad = () => {
-          state.layout  = layoutData.layout  || 'single';
-          state.bgColor = layoutData.bgColor || '#3a3a3a';
-          state.cards   = layoutData.cards   || {};
+          state.layout        = layoutData.layout        || 'single';
+          state.bgColor       = layoutData.bgColor       || '#3a3a3a';
+          state.bgTransparent = !!layoutData.bgTransparent;
+          state.cards         = layoutData.cards         || {};
+          loadedLayoutRef     = { binderId, layoutId, layoutName };
           saveState(); renderBinder(); applyBgColor();
         };
         if (Object.keys(state.cards).length > 0) {
@@ -393,21 +411,23 @@ function handleAuthState(user) {
         }
       } catch {}
     }
+    // If the user logged in because they wanted to save, open the save modal now
+    if (pendingSave) {
+      pendingSave = false;
+      openSaveLayoutModal();
+    }
   } else {
-    currentUser = null;
-    overlay.style.opacity       = '1';
-    overlay.style.pointerEvents = '';
-    $('profile-area').style.display    = 'none';
-    $('save-binder-btn').style.display = 'none';
-    state.cards   = {};
-    state.layout  = 'single';
-    state.bgColor = '#3a3a3a';
-    renderBinder();
-    applyBgColor();
+    currentUser     = null;
+    loadedLayoutRef = null;
+    $('profile-area').style.display = 'none';
+    $('signin-btn').style.display   = '';
     clearVerifState();
     showAuthView('signin');
     [['si-btn','Sign In'], ['reg-btn','Send Verification Code'], ['rst-btn','Send Reset Email']]
       .forEach(([id, label]) => { const b = $(id); if (b) { b.disabled = false; b.textContent = label; } });
+    loadState();
+    renderBinder();
+    applyBgColor();
   }
 }
 
@@ -645,9 +665,22 @@ function initProfileDropdown() {
 let selectedThumbnailUrl = null;
 
 async function openSaveLayoutModal() {
-  if (!currentUser || !fbDb) return;
+  if (!currentUser) {
+    pendingSave = true;
+    openAuthModal();
+    return;
+  }
+  if (!fbDb) return;
   selectedThumbnailUrl = null;
   $('save-layout-error').textContent = '';
+
+  // Show overwrite option when a layout was loaded from the binder page
+  if (loadedLayoutRef) {
+    $('overwrite-layout-name').textContent = loadedLayoutRef.layoutName;
+    $('overwrite-section').style.display = '';
+  } else {
+    $('overwrite-section').style.display = 'none';
+  }
 
   // Load binders for the select
   const select = $('save-binder-select');
@@ -744,6 +777,34 @@ function selectThumb(tile, url) {
   selectedThumbnailUrl = url;
 }
 
+async function overwriteLayout() {
+  if (!currentUser || !fbDb || !loadedLayoutRef) return;
+  const btn = $('confirm-overwrite-layout');
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  $('save-layout-error').textContent = '';
+
+  try {
+    const { binderId, layoutId } = loadedLayoutRef;
+    await fbDb.collection('users').doc(currentUser.uid)
+      .collection('binders').doc(binderId)
+      .collection('layouts').doc(layoutId)
+      .update({
+        layout:        state.layout,
+        bgColor:       state.bgColor,
+        bgTransparent: state.bgTransparent,
+        cards:         state.cards,
+      });
+    hideModal($('save-layout-modal'));
+  } catch {
+    $('save-layout-error').textContent = 'Failed to save — please try again.';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
 async function confirmSaveLayout() {
   const btn = $('confirm-save-layout');
   btn.disabled = true;
@@ -767,14 +828,18 @@ async function confirmSaveLayout() {
     }
 
     // Save layout
-    await userRef.collection('binders').doc(binderId).collection('layouts').add({
-      name:         layoutName,
-      layout:       state.layout,
-      bgColor:      state.bgColor,
-      cards:        state.cards,
-      thumbnailUrl: selectedThumbnailUrl || null,
-      createdAt:    new Date().toISOString(),
+    const newDoc = await userRef.collection('binders').doc(binderId).collection('layouts').add({
+      name:          layoutName,
+      layout:        state.layout,
+      bgColor:       state.bgColor,
+      bgTransparent: state.bgTransparent,
+      cards:         state.cards,
+      thumbnailUrl:  selectedThumbnailUrl || null,
+      createdAt:     new Date().toISOString(),
     });
+
+    // Track the new layout so future saves can overwrite it
+    loadedLayoutRef = { binderId, layoutId: newDoc.id, layoutName };
 
     hideModal($('save-layout-modal'));
   } catch (err) {
@@ -1050,8 +1115,27 @@ function renderBinder() {
 }
 
 function applyBgColor() {
-  document.documentElement.style.setProperty('--binder-bg', state.bgColor);
-  bgColorInput.value = state.bgColor;
+  const binder    = document.getElementById('binder');
+  const colorWrap = bgColorInput.closest('.color-wrap');
+  const tBtn      = $('bg-transparent');
+
+  if (state.bgTransparent) {
+    binder.classList.add('binder-transparent');
+  } else {
+    binder.classList.remove('binder-transparent');
+    document.documentElement.style.setProperty('--binder-bg', state.bgColor);
+  }
+
+  bgColorInput.value    = state.bgColor;
+  bgColorInput.disabled = state.bgTransparent;
+  if (colorWrap) colorWrap.classList.toggle('dimmed', state.bgTransparent);
+  if (tBtn)      tBtn.classList.toggle('active', state.bgTransparent);
+}
+
+function toggleBgTransparent() {
+  state.bgTransparent = !state.bgTransparent;
+  applyBgColor();
+  saveState();
 }
 
 /* ================================================================
@@ -1343,9 +1427,12 @@ async function downloadLayout(format) {
     const ctx = offscreen.getContext('2d');
     ctx.scale(scale, scale);
 
-    // Binder background
-    ctx.fillStyle = state.bgColor || '#3a3a3a';
-    ctx.fillRect(0, 0, bw, bh);
+    // Binder background — skip for transparent PNG (canvas is clear by default);
+    // always fill for JPG since JPEG has no alpha channel
+    if (!state.bgTransparent || format === 'jpg') {
+      ctx.fillStyle = state.bgColor || '#3a3a3a';
+      ctx.fillRect(0, 0, bw, bh);
+    }
 
     // Load card images fresh with CORS. The ?_cors suffix busts the browser
     // cache so we get a proper CORS response instead of the opaque cached
@@ -1407,6 +1494,99 @@ async function downloadLayout(format) {
   } catch (err) {
     console.error('Download failed:', err);
     alert('Download failed — ' + err.message);
+  } finally {
+    btn.innerHTML = origHTML;
+    btn.disabled  = false;
+  }
+}
+
+/* ================================================================
+   SAVE TO GALLERY  (mobile only — uses Web Share API on iOS)
+   ================================================================ */
+async function saveToGallery() {
+  const btn = $('dl-gallery');
+  const origHTML = btn.innerHTML;
+  btn.textContent = '…';
+  btn.disabled = true;
+
+  try {
+    const binder = document.getElementById('binder');
+    const { left: bx, top: by, width: bw, height: bh } = binder.getBoundingClientRect();
+    const scale = 2;
+
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = Math.round(bw * scale);
+    offscreen.height = Math.round(bh * scale);
+    const ctx = offscreen.getContext('2d');
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = state.bgColor || '#3a3a3a';
+    ctx.fillRect(0, 0, bw, bh);
+
+    const slotEls = Array.from(binder.querySelectorAll('.card-slot'));
+    const imgBySlot = new Map();
+
+    await Promise.all(slotEls.map(async slot => {
+      const imgEl = slot.querySelector('img[src]');
+      if (!imgEl) return;
+      const img = await new Promise(resolve => {
+        const el = new Image();
+        el.crossOrigin = 'anonymous';
+        el.onload  = () => resolve(el);
+        el.onerror = () => resolve(null);
+        el.src = imgEl.src + (imgEl.src.includes('?') ? '&' : '?') + '_cors';
+      });
+      if (img) imgBySlot.set(slot.dataset.slotId, img);
+    }));
+
+    for (const slot of slotEls) {
+      const sr = slot.getBoundingClientRect();
+      if (!sr.width) continue;
+
+      const x = sr.left - bx;
+      const y = sr.top  - by;
+      const w = sr.width;
+      const h = sr.height;
+      const r = 7;
+
+      drawRoundedRect(ctx, x, y, w, h, r);
+      ctx.fillStyle   = 'rgba(0,0,0,0.32)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+      const img = imgBySlot.get(slot.dataset.slotId);
+      if (img) {
+        ctx.save();
+        drawRoundedRect(ctx, x, y, w, h, r);
+        ctx.clip();
+        ctx.drawImage(img, x, y, w, h);
+        ctx.restore();
+      }
+    }
+
+    const blob = await new Promise(resolve => offscreen.toBlob(resolve, 'image/jpeg', 0.92));
+    const file = new File([blob], 'TCGBinder.jpg', { type: 'image/jpeg' });
+
+    // Web Share API: on iOS Safari this opens the native share sheet → Save Image → Camera Roll
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'TCGBinder Layout' });
+    } else {
+      // Fallback for browsers without file sharing (Android Chrome, etc.)
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.download = 'TCGBinder.jpg';
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      console.error('Save to gallery failed:', err);
+      alert('Could not save — ' + err.message);
+    }
   } finally {
     btn.innerHTML = origHTML;
     btn.disabled  = false;
@@ -1522,9 +1702,10 @@ function toggleLayout() {
 function saveState() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      layout:  state.layout,
-      bgColor: state.bgColor,
-      cards:   state.cards,
+      layout:        state.layout,
+      bgColor:       state.bgColor,
+      bgTransparent: state.bgTransparent,
+      cards:         state.cards,
     }));
   } catch (e) {
     console.warn('Could not save to localStorage:', e);
@@ -1536,9 +1717,10 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const saved = JSON.parse(raw);
-    if (saved.layout)  state.layout  = saved.layout;
-    if (saved.bgColor) state.bgColor = saved.bgColor;
-    if (saved.cards)   state.cards   = saved.cards;
+    if (saved.layout)                     state.layout        = saved.layout;
+    if (saved.bgColor)                    state.bgColor       = saved.bgColor;
+    if (saved.bgTransparent !== undefined) state.bgTransparent = saved.bgTransparent;
+    if (saved.cards)                      state.cards         = saved.cards;
   } catch (e) {
     console.warn('Could not load saved state:', e);
   }
@@ -1569,6 +1751,9 @@ function attachEvents() {
     saveState();
   });
 
+  // Transparent background toggle
+  $('bg-transparent').addEventListener('click', toggleBgTransparent);
+
   // Clear all — open confirm
   clearAllBtn.addEventListener('click', () => showModal(confirmModal));
   confirmClear.addEventListener('click', clearAllCards);
@@ -1592,6 +1777,7 @@ function attachEvents() {
   // Download buttons
   $('dl-png').addEventListener('click', () => downloadLayout('png'));
   $('dl-jpg').addEventListener('click', () => downloadLayout('jpg'));
+  $('dl-gallery').addEventListener('click', saveToGallery);
 
   // Filters: mark active state; alpha & date are mutually exclusive
   filterType.addEventListener('change', updateFilterActiveState);
@@ -1615,6 +1801,15 @@ function attachEvents() {
     });
   }
 
+  // Sign in button (shown when signed out)
+  $('signin-btn').addEventListener('click', openAuthModal);
+
+  // Auth modal close button + backdrop click
+  $('close-auth').addEventListener('click', closeAuthModal);
+  $('auth-overlay').addEventListener('click', (e) => {
+    if (e.target === $('auth-overlay')) closeAuthModal();
+  });
+
   // Profile dropdown
   initProfileDropdown();
 
@@ -1629,6 +1824,7 @@ function attachEvents() {
     $('new-binder-row').style.display = val === '__new__' ? '' : 'none';
     if (val !== '__new__') await refreshLayoutName(val);
   });
+  $('confirm-overwrite-layout').addEventListener('click', overwriteLayout);
   $('confirm-save-layout').addEventListener('click', confirmSaveLayout);
 
   // Load layout confirm modal
@@ -1714,7 +1910,6 @@ attachEvents();
 
 if (!FIREBASE_CONFIG.apiKey || FIREBASE_CONFIG.apiKey.startsWith('YOUR_')) {
   // Firebase not yet configured — run without auth for local development
-  $('auth-overlay').style.display = 'none';
   loadState();
   renderBinder();
   applyBgColor();

@@ -52,6 +52,14 @@
         <input type="color" id="bg-color" value="#3a3a3a">
       </label>
 
+      <button id="bg-transparent" class="btn btn-outline" title="Toggle transparent background (PNG only)">
+        <svg width="13" height="13" viewBox="0 0 10 10" fill="currentColor" stroke="none">
+          <rect x="0" y="0" width="5" height="5"/>
+          <rect x="5" y="5" width="5" height="5"/>
+        </svg>
+        Transparent
+      </button>
+
       <div class="dl-group">
         <button id="dl-png" class="btn btn-outline" title="Download binder layout as PNG">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -69,9 +77,17 @@
           </svg>
           JPG
         </button>
+        <button id="dl-gallery" class="btn btn-outline" title="Save binder layout to your photo gallery">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21 15 16 10 5 21"/>
+          </svg>
+          Gallery
+        </button>
       </div>
 
-      <button id="save-binder-btn" class="btn btn-outline" title="Save current layout to a Binder" style="display:none">
+      <button id="save-binder-btn" class="btn btn-outline" title="Save current layout to a Binder">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
           <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
         </svg>
@@ -87,6 +103,9 @@
       </button>
 
     </div>
+
+    <!-- Sign in button (shown when signed out) -->
+    <button id="signin-btn" class="btn btn-primary" title="Sign in to your account">Sign In</button>
 
     <!-- Profile icon + dropdown (always visible when logged in) -->
     <div id="profile-area" class="profile-area" style="display:none">
@@ -250,6 +269,11 @@
   <!-- ========== AUTH OVERLAY ========== -->
   <div id="auth-overlay" class="auth-overlay">
     <div class="auth-card">
+      <button class="modal-close" id="close-auth" aria-label="Close">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
       <p class="auth-logo">TCGBinder</p>
 
       <!-- Sign In -->
@@ -365,7 +389,26 @@
           <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
         </svg>
       </button>
-      <h3>Save to Binder</h3>
+      <h3>Save Layout</h3>
+
+      <!-- Overwrite section — only shown when a layout was loaded from the binder page -->
+      <div id="overwrite-section" style="display:none">
+        <div class="overwrite-row">
+          <div class="overwrite-info">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            <div>
+              <div class="overwrite-label">Save changes to</div>
+              <div id="overwrite-layout-name" class="overwrite-name">Layout</div>
+            </div>
+          </div>
+          <button id="confirm-overwrite-layout" class="btn btn-primary">Save Changes</button>
+        </div>
+        <div class="save-divider"><span>or save as a new layout</span></div>
+      </div>
+
       <div class="auth-field">
         <label for="save-binder-select">Binder</label>
         <select id="save-binder-select" class="sl-select"></select>

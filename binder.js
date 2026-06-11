@@ -152,21 +152,20 @@ function makeBinderCard(id, data) {
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="opacity:0.25">
         <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
       </svg>
+      <div class="binder-open-overlay">Open</div>
     </div>
     <div class="binder-card-info">
       <div class="binder-card-name">${escHtml(data.name)}</div>
       <div class="binder-card-meta" id="meta-${id}">Loading…</div>
     </div>
     <div class="binder-card-actions">
-      <button class="binder-card-actions button btn-card-open"   data-id="${id}">Open</button>
-      <button class="binder-card-actions button btn-card-rename" data-id="${id}" data-name="${escHtml(data.name)}">Rename</button>
-      <button class="binder-card-actions button btn-card-delete" data-id="${id}" data-name="${escHtml(data.name)}">Delete</button>
+      <button class="btn-card-rename" data-id="${id}" data-name="${escHtml(data.name)}">Rename</button>
+      <button class="btn-card-delete" data-id="${id}" data-name="${escHtml(data.name)}">Delete</button>
     </div>`;
 
-  card.querySelector('.btn-card-open').addEventListener('click',   () => openBinder(id, data.name));
+  card.addEventListener('click', () => openBinder(id, data.name));
   card.querySelector('.btn-card-rename').addEventListener('click', (e) => { e.stopPropagation(); startRenameBinder(id, data.name); });
   card.querySelector('.btn-card-delete').addEventListener('click', (e) => { e.stopPropagation(); startDeleteBinder(id, data.name); });
-  card.querySelector('.binder-card-thumb').addEventListener('click', () => openBinder(id, data.name));
 
   // Load layout count async
   fbDb.collection('users').doc(currentUser.uid)
